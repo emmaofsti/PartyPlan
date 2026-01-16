@@ -1,0 +1,31 @@
+
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import prisma from '@/lib/prisma';
+
+export async function POST(request: Request) {
+    const session = await getServerSession(authOptions);
+
+    if (!session) {
+        return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 });
+    }
+
+    try {
+        const subscription = await request.json();
+
+        // Save subscription to database
+        await prisma.pushSubscription.create({
+            data: {
+                userId: session.user.id,
+                endpoint: subscription.endpoint,
+                keys: JSON.stringify(subscription.keys),
+            },
+        });
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error('Error saving subscription:', error);
+        return NextResponse.json({ error: 'Serverfeil' }, { status: 500 });
+    }
+}

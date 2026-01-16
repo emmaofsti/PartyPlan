@@ -7,8 +7,8 @@ export const metadata: Metadata = {
   title: 'Party-plan Storo - Vaktplan',
   description: 'Vaktplan for Party-plan Storo',
   icons: {
-    icon: '/icon-192.png',
-    apple: '/apple-icon.png',
+    icon: '/icon-192-v1.png',
+    apple: '/apple-icon-v1.png',
   },
 };
 

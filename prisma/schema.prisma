@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_PRISMA_URL") // uses connection pooling
+  directUrl = env("POSTGRES_URL_NON_POOLING") // uses a direct connection
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  password  String
+  role      String   @default("EMPLOYEE")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments      ShiftAssignment[]
+  swapRequestsFrom ShiftSwapRequest[] @relation("FromUser")
+  swapRequestsTo   ShiftSwapRequest[] @relation("ToUser")
+  pushSubscriptions PushSubscription[]
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String
+  keys      String   // JSON string of { p256dh, auth }
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Shift {
+  id        String   @id @default(cuid())
+  title     String
+  startsAt  DateTime
+  endsAt    DateTime
+  location  String
+  notes     String?
+  status    String   @default("PLANNED")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments       ShiftAssignment[]
+  swapRequestsFrom  ShiftSwapRequest[] @relation("FromShift")
+  swapRequestsTo    ShiftSwapRequest[] @relation("ToShift")
+}
+
+model ShiftAssignment {
+  id               String   @id @default(cuid())
+  shiftId          String
+  userId           String
+  assignmentStatus String   @default("ASSIGNED")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, userId])
+}
+
+model ShiftSwapRequest {
+  id          String   @id @default(cuid())
+  fromUserId  String
+  toUserId    String
+  fromShiftId String
+  toShiftId   String
+  status      String   @default("PENDING") // PENDING, ACCEPTED, DECLINED
+  message     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  fromUser  User  @relation("FromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser    User  @relation("ToUser", fields: [toUserId], references: [id], onDelete: Cascade)
+  fromShift Shift @relation("FromShift", fields: [fromShiftId], references: [id], onDelete: Cascade)
+  toShift   Shift @relation("ToShift", fields: [toShiftId], references: [id], onDelete: Cascade)
+}
+
