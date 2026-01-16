@@ -41,7 +41,7 @@ export default function Navbar() {
           <Link href="/dashboard" className="navbar-logo">
             <div className="relative h-8 w-auto aspect-[3/1]">
               <Image
-                src="/logo-v1.png"
+                src="/logo-final.png"
                 alt="Party-plan Storo"
                 width={120}
                 height={40}
