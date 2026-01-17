@@ -46,7 +46,12 @@ export default function PushNotificationManager() {
             // Check if already subscribed
             const sub = await registration.pushManager.getSubscription();
             setSubscription(sub);
-        } catch (error) {
+        } catch (error: any) {
+            // Handle specific known errors gracefully to avoid console noise in dev/private mode
+            if (error.name === 'AbortError' || error.message?.includes('storage') || error.message?.includes('failed')) {
+                console.warn('Push Notifications disabled: Service Worker registration failed (likely Private Browsing or storage restricted).');
+                return;
+            }
             console.error('Service Worker registration failed:', error);
         }
     }
@@ -54,6 +59,11 @@ export default function PushNotificationManager() {
     async function subscribeToPush() {
         try {
             const registration = await navigator.serviceWorker.ready;
+
+            if (!VAPID_PUBLIC_KEY) {
+                console.warn('VAPID Public Key not found. Push notifications disabled.');
+                return;
+            }
 
             // This triggers the browser permission prompt
             const sub = await registration.pushManager.subscribe({

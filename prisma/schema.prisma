@@ -68,17 +68,17 @@ model ShiftAssignment {
 model ShiftSwapRequest {
   id          String   @id @default(cuid())
   fromUserId  String
-  toUserId    String
+  toUserId    String?
   fromShiftId String
-  toShiftId   String
+  toShiftId   String?
   status      String   @default("PENDING") // PENDING, ACCEPTED, DECLINED
   message     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   fromUser  User  @relation("FromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
-  toUser    User  @relation("ToUser", fields: [toUserId], references: [id], onDelete: Cascade)
+  toUser    User? @relation("ToUser", fields: [toUserId], references: [id], onDelete: Cascade)
   fromShift Shift @relation("FromShift", fields: [fromShiftId], references: [id], onDelete: Cascade)
-  toShift   Shift @relation("ToShift", fields: [toShiftId], references: [id], onDelete: Cascade)
+  toShift   Shift? @relation("ToShift", fields: [toShiftId], references: [id], onDelete: Cascade)
 }
 

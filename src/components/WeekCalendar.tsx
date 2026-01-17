@@ -20,9 +20,23 @@ interface CalendarShift {
 
 interface WeekCalendarProps {
   userId: string;
+  isAdmin?: boolean;
+  isEditing?: boolean;
+  onToggleEdit?: () => void;
+  onShiftClick?: (shift: CalendarShift) => void;
+  onAddShift?: () => void;
+  refreshTrigger?: number;
 }
 
-export default function WeekCalendar({ userId }: WeekCalendarProps) {
+export default function WeekCalendar({
+  userId,
+  isAdmin = false,
+  isEditing = false,
+  onToggleEdit,
+  onShiftClick,
+  onAddShift,
+  refreshTrigger = 0
+}: WeekCalendarProps) {
   const [shifts, setShifts] = useState<CalendarShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -47,7 +61,7 @@ export default function WeekCalendar({ userId }: WeekCalendarProps) {
 
   useEffect(() => {
     fetchCalendarShifts();
-  }, [weekOffset]);
+  }, [weekOffset, refreshTrigger]);
 
   const fetchCalendarShifts = async () => {
     setLoading(true);
@@ -65,11 +79,11 @@ export default function WeekCalendar({ userId }: WeekCalendarProps) {
     setLoading(false);
   };
 
-  const weekDays = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'];
+  const weekDays = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'];
 
   const getDaysOfWeek = () => {
     const days = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       const date = new Date(monday);
       date.setDate(monday.getDate() + i);
       days.push(date);
@@ -110,15 +124,33 @@ export default function WeekCalendar({ userId }: WeekCalendarProps) {
   return (
     <div className="week-calendar">
       <div className="calendar-header">
-        <button onClick={() => setWeekOffset(weekOffset - 1)} className="btn btn-ghost btn-sm">
-          ← Forrige
-        </button>
-        <h3 className="calendar-week-title">
-          Uke {getWeekNumber(monday)}
-        </h3>
-        <button onClick={() => setWeekOffset(weekOffset + 1)} className="btn btn-ghost btn-sm">
-          Neste →
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setWeekOffset(weekOffset - 1)} className="btn btn-ghost btn-sm">
+            ←
+          </button>
+          <h3 className="calendar-week-title">
+            Uke {getWeekNumber(monday)}
+          </h3>
+          <button onClick={() => setWeekOffset(weekOffset + 1)} className="btn btn-ghost btn-sm">
+            →
+          </button>
+        </div>
+
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            {isEditing && (
+              <button onClick={onAddShift} className="btn btn-primary btn-sm">
+                + Legg til vakt
+              </button>
+            )}
+            <button
+              onClick={onToggleEdit}
+              className={`btn btn-sm ${isEditing ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              {isEditing ? 'Ferdig' : 'Rediger plan'}
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -132,7 +164,7 @@ export default function WeekCalendar({ userId }: WeekCalendarProps) {
             const isToday = new Date().toDateString() === date.toDateString();
 
             return (
-              <div key={i} className={`calendar-day ${isToday ? 'calendar-day-today' : ''}`}>
+              <div key={i} className={`calendar-day ${isToday ? 'calendar-day-today' : ''} ${isEditing ? 'editing-mode' : ''}`}>
                 <div className="calendar-day-header">
                   <span className="calendar-day-name">{weekDays[i]}</span>
                   <span className="calendar-day-date">{formatDateHeader(date)}</span>
@@ -144,7 +176,8 @@ export default function WeekCalendar({ userId }: WeekCalendarProps) {
                     dayShifts.map((shift) => (
                       <div
                         key={shift.id}
-                        className={`calendar-shift ${isUserShift(shift) ? 'calendar-shift-mine' : ''}`}
+                        className={`calendar-shift ${isUserShift(shift) ? 'calendar-shift-mine' : ''} ${isEditing ? 'calendar-shift-editable' : ''}`}
+                        onClick={() => isEditing && onShiftClick?.(shift)}
                       >
                         <div className="calendar-shift-time">
                           {formatTimeRange(shift.startsAt, shift.endsAt)}
@@ -179,6 +212,8 @@ export default function WeekCalendar({ userId }: WeekCalendarProps) {
           align-items: center;
           justify-content: space-between;
           margin-bottom: var(--space-lg);
+          gap: var(--space-md);
+          flex-wrap: wrap;
         }
 
         .calendar-week-title {
@@ -269,6 +304,17 @@ export default function WeekCalendar({ userId }: WeekCalendarProps) {
           border-left-color: var(--color-brand-primary);
           background: linear-gradient(135deg, rgba(247, 143, 161, 0.1), transparent);
         }
+        
+        .calendar-shift-editable {
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        
+        .calendar-shift-editable:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            border-left-color: var(--color-brand-primary);
+        }
 
         .calendar-shift-time {
           font-size: 0.75rem;
@@ -295,6 +341,10 @@ export default function WeekCalendar({ userId }: WeekCalendarProps) {
           color: #000;
           font-weight: 600;
         }
+        
+        .flex { display: flex; }
+        .items-center { align-items: center; }
+        .gap-2 { gap: 0.5rem; }
       `}</style>
     </div>
   );

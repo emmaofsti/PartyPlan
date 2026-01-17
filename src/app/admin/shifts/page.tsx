@@ -177,7 +177,7 @@ export default function ShiftsPage() {
                                 <th>Dato</th>
                                 <th>Tid</th>
                                 <th>Ansatt</th>
-                                <th>Status</th>
+
                                 <th></th>
                             </tr>
                         </thead>
@@ -187,11 +187,7 @@ export default function ShiftsPage() {
                                     <td>{formatDate(shift.startsAt)}</td>
                                     <td>{formatTimeRange(shift.startsAt, shift.endsAt)}</td>
                                     <td>{shift.title}</td>
-                                    <td>
-                                        <span className={`badge badge-${shift.status.toLowerCase()}`}>
-                                            {shift.status === 'PLANNED' ? 'Planlagt' : 'Avlyst'}
-                                        </span>
-                                    </td>
+
                                     <td className="text-right">
                                         <div className="flex gap-sm justify-end">
                                             {shift.status !== 'CANCELLED' && (

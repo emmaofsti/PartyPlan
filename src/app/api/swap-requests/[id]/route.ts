@@ -39,8 +39,8 @@ export async function PUT(
             return NextResponse.json({ error: 'Forespørsel ikke funnet' }, { status: 404 });
         }
 
-        // Only the recipient can accept/decline
-        if (swapRequest.toUserId !== session.user.id) {
+        // Only the recipient can accept/decline, unless it is an open request (toUserId is null)
+        if (swapRequest.toUserId && swapRequest.toUserId !== session.user.id) {
             return NextResponse.json(
                 { error: 'Bare mottakeren kan svare på forespørselen' },
                 { status: 403 }
@@ -55,32 +55,62 @@ export async function PUT(
         }
 
         if (status === 'ACCEPTED') {
-            // Perform the actual swap
+            // Perform the actual swap or handover
             await prisma.$transaction(async (tx) => {
-                // Update fromShift title to toUser's name
-                const toUser = await tx.user.findUnique({ where: { id: swapRequest.toUserId } });
-                await tx.shift.update({
-                    where: { id: swapRequest.fromShiftId },
-                    data: { title: toUser?.name || 'Vakt' },
-                });
+                // Determine target user (if open request, it's the current user)
+                let toUserId = swapRequest.toUserId;
+                if (!toUserId) {
+                    toUserId = session.user.id;
+                    // For open requests, we MUST update the request with the specific user who accepted
+                    await tx.shiftSwapRequest.update({
+                        where: { id },
+                        data: { toUserId: session.user.id }
+                    });
+                }
 
-                // Update toShift title to fromUser's name
-                const fromUser = await tx.user.findUnique({ where: { id: swapRequest.fromUserId } });
-                await tx.shift.update({
-                    where: { id: swapRequest.toShiftId },
-                    data: { title: fromUser?.name || 'Vakt' },
-                });
+                const toUser = await tx.user.findUnique({ where: { id: toUserId! } });
 
-                // Swap the assignments
-                await tx.shiftAssignment.updateMany({
-                    where: { shiftId: swapRequest.fromShiftId, userId: swapRequest.fromUserId },
-                    data: { userId: swapRequest.toUserId },
-                });
+                if (swapRequest.toShiftId) {
+                    // SWAP: Two-way trade
 
-                await tx.shiftAssignment.updateMany({
-                    where: { shiftId: swapRequest.toShiftId, userId: swapRequest.toUserId },
-                    data: { userId: swapRequest.fromUserId },
-                });
+                    // Update fromShift title to toUser's name
+                    await tx.shift.update({
+                        where: { id: swapRequest.fromShiftId },
+                        data: { title: toUser?.name || 'Vakt' },
+                    });
+
+                    // Update toShift title to fromUser's name
+                    const fromUser = await tx.user.findUnique({ where: { id: swapRequest.fromUserId } });
+                    await tx.shift.update({
+                        where: { id: swapRequest.toShiftId },
+                        data: { title: fromUser?.name || 'Vakt' },
+                    });
+
+                    // Swap the assignments
+                    await tx.shiftAssignment.updateMany({
+                        where: { shiftId: swapRequest.fromShiftId, userId: swapRequest.fromUserId },
+                        data: { userId: toUserId! },
+                    });
+
+                    await tx.shiftAssignment.updateMany({
+                        where: { shiftId: swapRequest.toShiftId, userId: toUserId! },
+                        data: { userId: swapRequest.fromUserId },
+                    });
+                } else {
+                    // GIVE AWAY: One-way transfer
+
+                    // Update shift title to new owner's name
+                    await tx.shift.update({
+                        where: { id: swapRequest.fromShiftId },
+                        data: { title: toUser?.name || 'Vakt' },
+                    });
+
+                    // Update assignment: change owner from sender to recipient
+                    await tx.shiftAssignment.updateMany({
+                        where: { shiftId: swapRequest.fromShiftId, userId: swapRequest.fromUserId },
+                        data: { userId: toUserId! },
+                    });
+                }
 
                 // Update request status
                 await tx.shiftSwapRequest.update({
@@ -89,6 +119,15 @@ export async function PUT(
                 });
             });
         } else {
+            // If declining an open request, we can't fully "DECLINE" it in DB because it should stay open for others.
+            // Ideally we'd have a 'HiddenRequests' table. For now, we block declining open requests via API (frontend should handle UI).
+            if (!swapRequest.toUserId) {
+                return NextResponse.json(
+                    { error: 'Du kan ikke avslå en åpen forespørsel (ignorer den i stedet)' },
+                    { status: 400 }
+                );
+            }
+
             // Just mark as declined
             await prisma.shiftSwapRequest.update({
                 where: { id },
@@ -109,9 +148,16 @@ export async function PUT(
         // Send SMS to the requester if accepted
         if (status === 'ACCEPTED' && updatedRequest?.fromUser?.phone) {
             import('@/lib/sms').then(({ sendSMS }) => {
+                let message = '';
+                if (updatedRequest.toShift) {
+                    message = `Hei! ${updatedRequest.toUser?.name || 'Mottaker'} har godtatt bytte av vakt "${updatedRequest.fromShift.title}" mot "${updatedRequest.toShift.title}". Vaktplanen er oppdatert.`;
+                } else {
+                    message = `Hei! ${updatedRequest.toUser?.name || 'Mottaker'} har godtatt å overta vakten "${updatedRequest.fromShift.title}". Vaktplanen er oppdatert.`;
+                }
+
                 sendSMS(
                     updatedRequest.fromUser.phone!,
-                    `Hei! ${updatedRequest.toUser.name} har godtatt bytte av vakt "${updatedRequest.fromShift.title}" mot "${updatedRequest.toShift.title}". Vaktplanen er oppdatert.`
+                    message
                 ).catch(console.error);
             });
         }

@@ -4,7 +4,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ShiftCard from '@/components/ShiftCard';
 import WeekCalendar from '@/components/WeekCalendar';
+import MonthCalendar from '@/components/MonthCalendar';
 import PushNotificationManager from '@/components/PushNotificationManager';
+import AdminShiftModal from '@/components/AdminShiftModal';
+import SwapModal from '@/components/SwapModal';
+import DayDetailModal from '@/components/DayDetailModal';
 import { formatDate, formatTimeRange } from '@/lib/utils';
 
 interface Shift {
@@ -17,6 +21,7 @@ interface Shift {
     status: string;
     assignmentId: string;
     assignmentStatus: string;
+    assignments?: { user: { id: string; name: string } }[]; // Optional as it comes from calendar API
 }
 
 interface User {
@@ -37,26 +42,39 @@ interface DashboardClientProps {
     shifts: Shift[];
     userName: string;
     userId: string;
+    userRole: string;
 }
 
-export default function DashboardClient({ shifts, userName, userId }: DashboardClientProps) {
+export default function DashboardClient({ shifts, userName, userId, userRole }: DashboardClientProps) {
     const router = useRouter();
     const [swapRequests, setSwapRequests] = useState<SwapRequest[]>([]);
-    const [viewMode, setViewMode] = useState<'mine' | 'team'>('mine');
+    const [viewMode, setViewMode] = useState<'mine' | 'team' | 'month'>('mine');
+
+    // Admin state
+    const isAdmin = userRole === 'ADMIN';
+    const [adminEditMode, setAdminEditMode] = useState(false);
+    const [showAdminModal, setShowAdminModal] = useState(false);
+    const [adminSelectedShift, setAdminSelectedShift] = useState<any | null>(null);
 
     // Swap flow state
     const [showSwapModal, setShowSwapModal] = useState(false);
+    const [swapMode, setSwapMode] = useState<'swap' | 'give'>('swap');
     const [swapStep, setSwapStep] = useState<'selectEmployee' | 'selectShift'>('selectEmployee');
     const [selectedMyShift, setSelectedMyShift] = useState<Shift | null>(null);
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [selectedUserShifts, setSelectedUserShifts] = useState<Shift[]>([]);
+    const [shiftsOnSwapDate, setShiftsOnSwapDate] = useState<Shift[]>([]);
     const [loadingShifts, setLoadingShifts] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [dayModalData, setDayModalData] = useState<{ date: Date, promise: Promise<any[]> } | null>(null);
 
     useEffect(() => {
         fetchSwapRequests();
-    }, []);
+        if (isAdmin || showSwapModal) {
+            fetchUsers(); // Fetch users if admin (for assignment) or swapping
+        }
+    }, [isAdmin, showSwapModal]);
 
     const fetchSwapRequests = async () => {
         try {
@@ -75,8 +93,11 @@ export default function DashboardClient({ shifts, userName, userId }: DashboardC
             const res = await fetch('/api/users');
             if (res.ok) {
                 const data = await res.json();
-                // Filter out current user and Emma (owner, not an employee)
-                setUsers(data.filter((u: User) => u.id !== userId && u.name.toLowerCase() !== 'emma'));
+                if (isAdmin) {
+                    setUsers(data); // Admin needs everyone
+                } else {
+                    setUsers(data.filter((u: User) => u.id !== userId && u.name.toLowerCase() !== 'emma'));
+                }
             }
         } catch (error) {
             console.error('Failed to fetch users:', error);
@@ -97,22 +118,84 @@ export default function DashboardClient({ shifts, userName, userId }: DashboardC
         setLoadingShifts(false);
     };
 
-    const openSwapModal = (shift: Shift) => {
+    const getShiftsOnDatePromise = (date: Date) => {
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+        return fetch(`/api/shifts/calendar?start=${startOfDay.toISOString()}&end=${endOfDay.toISOString()}`)
+            .then(res => {
+                if (!res.ok) throw new Error('Failed to fetch');
+                return res.json();
+            });
+    };
+
+    const fetchShiftsOnDate = async (date: Date) => {
+        try {
+            const data = await getShiftsOnDatePromise(date);
+            setShiftsOnSwapDate(data);
+        } catch (error) {
+            console.error('Failed to fetch shifts on date:', error);
+        }
+    };
+
+    const handleOpenDayModal = (date: Date) => {
+        setDayModalData({
+            date: new Date(date),
+            promise: getShiftsOnDatePromise(date)
+        });
+    };
+
+    const openSwapModal = (shift: Shift, mode: 'swap' | 'give') => {
         setSelectedMyShift(shift);
+        setSwapMode(mode);
         setSwapStep('selectEmployee');
         setSelectedUser(null);
         setSelectedUserShifts([]);
         setShowSwapModal(true);
         fetchUsers();
+        fetchShiftsOnDate(shift.startsAt);
     };
 
-    const selectEmployee = (user: User) => {
+    const selectEmployee = async (user: User) => {
         setSelectedUser(user);
-        setSwapStep('selectShift');
-        fetchUserShifts(user.id);
+
+        if (swapMode === 'give') {
+            if (!selectedMyShift) return;
+
+            const isAll = user.id === 'ALL';
+            if (!confirm(`Vil du gi bort vakten din til ${isAll ? 'alle' : user.name}?`)) return;
+
+            setSubmitting(true);
+            try {
+                const res = await fetch('/api/swap-requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fromShiftId: selectedMyShift.id,
+                        toUserId: isAll ? null : user.id,
+                    }),
+                });
+
+                if (res.ok) {
+                    setShowSwapModal(false);
+                    fetchSwapRequests();
+                    alert(`Forespørsel om å gi bort vakt sendt til ${isAll ? 'alle' : user.name}!`);
+                } else {
+                    const data = await res.json();
+                    alert(data.details || data.error || 'Kunne ikke sende forespørsel');
+                }
+            } catch {
+                alert('En feil oppstod');
+            }
+            setSubmitting(false);
+        } else {
+            setSwapStep('selectShift');
+            fetchUserShifts(user.id);
+        }
     };
 
-    const requestSwap = async (theirShift: Shift) => {
+    const requestSwap = async (theirShift: any) => {
         if (!selectedMyShift || !selectedUser) return;
         setSubmitting(true);
 
@@ -141,30 +224,101 @@ export default function DashboardClient({ shifts, userName, userId }: DashboardC
         setSubmitting(false);
     };
 
-    const respondToSwap = async (requestId: string, status: 'ACCEPTED' | 'DECLINED') => {
+    const cancelSwapRequest = async (requestId: string) => {
+        if (!confirm('Er du sikker på at du vil avbryte denne forespørselen?')) return;
+
         try {
             const res = await fetch(`/api/swap-requests/${requestId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status }),
+                method: 'DELETE',
             });
 
             if (res.ok) {
                 fetchSwapRequests();
-                router.refresh();
-                if (status === 'ACCEPTED') {
-                    alert('Vaktbytte godkjent!');
-                }
+                alert('Forespørsel avbrutt');
+            } else {
+                const data = await res.json();
+                alert(data.error || 'Kunne ikke avbryte forespørsel');
             }
         } catch (error) {
-            console.error('Failed to respond to swap:', error);
+            console.error('Failed to cancel swap request:', error);
         }
     };
 
     const upcomingShifts = shifts.filter((s) => s.status !== 'CANCELLED');
     const nextShift = upcomingShifts[0];
     const restShifts = upcomingShifts.slice(1);
-    const pendingIncoming = swapRequests.filter(r => r.status === 'PENDING' && r.toUser.id === userId);
+
+    const pendingIncoming = swapRequests.filter(r =>
+        r.status === 'PENDING' &&
+        (r.toUser?.id === userId || (!r.toUser && r.fromUser.id !== userId))
+    );
+
+    const checkUserAvailability = (currUserId: string) => {
+        return shiftsOnSwapDate.some(shift =>
+            shift.assignments && shift.assignments.some((a: any) => a.user.id === currUserId)
+        );
+    };
+
+    const getPendingOutgoingRequest = (shiftId: string) => {
+        return swapRequests.find(req =>
+            req.fromShift.id === shiftId &&
+            req.fromUser.id === userId &&
+            req.status === 'PENDING'
+        );
+    };
+
+    const handleAdminClickShift = (shift: any) => {
+        setAdminSelectedShift(shift);
+        setShowAdminModal(true);
+    };
+
+    const handleAdminAddShift = () => {
+        setAdminSelectedShift(null); // New shift
+        setShowAdminModal(true);
+    };
+
+    const handleSaveShift = async (shiftData: any) => {
+        try {
+            const isNew = !shiftData.id;
+            const url = isNew ? '/api/shifts' : `/api/shifts/${shiftData.id}`;
+            const method = isNew ? 'POST' : 'PUT';
+
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(shiftData),
+            });
+
+            if (res.ok) {
+                setShowAdminModal(false);
+                // Trigger refresh by updating refreshTrigger via showAdminModal state change
+            } else {
+                const err = await res.json();
+                alert(err.error || 'Kunne ikke lagre vakt');
+            }
+        } catch (error) {
+            console.error('Failed to save shift:', error);
+            alert('En feil oppstod');
+        }
+    };
+
+    const handleDeleteShift = async (shiftId: string) => {
+        try {
+            const res = await fetch(`/api/shifts/${shiftId}`, {
+                method: 'DELETE',
+            });
+
+            if (res.ok) {
+                setShowAdminModal(false);
+            } else {
+                const err = await res.json();
+                alert(err.error || 'Kunne ikke slette vakt');
+            }
+        } catch (error) {
+            console.error('Failed to delete shift:', error);
+            alert('En feil oppstod');
+        }
+    };
 
     return (
         <main className="main-content">
@@ -178,7 +332,6 @@ export default function DashboardClient({ shifts, userName, userId }: DashboardC
                 <PushNotificationManager />
             </div>
 
-            {/* View toggle */}
             <div className="view-toggle">
                 <button
                     className={`view-toggle-btn ${viewMode === 'mine' ? 'active' : ''}`}
@@ -192,27 +345,49 @@ export default function DashboardClient({ shifts, userName, userId }: DashboardC
                 >
                     👥 Felles vaktplan
                 </button>
+                <button
+                    className={`view-toggle-btn ${viewMode === 'month' ? 'active' : ''}`}
+                    onClick={() => setViewMode('month')}
+                >
+                    📅 Mnd oversikt
+                </button>
             </div>
 
-            {/* Pending incoming swap requests */}
             {pendingIncoming.length > 0 && (
                 <section className="dashboard-section">
-                    <h2 className="section-title">📨 Bytteforespørsler</h2>
+                    <h2 className="section-title">📨 Forespørsler</h2>
                     <div className="swap-requests">
                         {pendingIncoming.map((req) => (
                             <div key={req.id} className="card swap-request-card">
                                 <p>
-                                    <strong>{req.fromUser.name}</strong> vil bytte sin vakt
-                                    <strong> {formatDate(req.fromShift.startsAt)} {formatTimeRange(req.fromShift.startsAt, req.fromShift.endsAt)}</strong> med din vakt
-                                    <strong> {formatDate(req.toShift.startsAt)} {formatTimeRange(req.toShift.startsAt, req.toShift.endsAt)}</strong>
+                                    <strong>{req.fromUser.name}</strong>
+                                    {req.toShift ? (
+                                        <> vil bytte sin vakt <strong>{formatDate(req.fromShift.startsAt)} {formatTimeRange(req.fromShift.startsAt, req.fromShift.endsAt)}</strong> med din vakt <strong>{formatDate(req.toShift.startsAt)} {formatTimeRange(req.toShift.startsAt, req.toShift.endsAt)}</strong></>
+                                    ) : (
+                                        <> vil gi bort vakt <strong>{formatDate(req.fromShift.startsAt)} {formatTimeRange(req.fromShift.startsAt, req.fromShift.endsAt)}</strong>. Kan du jobbe?</>
+                                    )}
                                 </p>
                                 <div className="swap-actions">
-                                    <button onClick={() => respondToSwap(req.id, 'ACCEPTED')} className="btn btn-primary btn-sm">
+                                    <button onClick={() => {
+                                        fetch(`/api/swap-requests/${req.id}/respond`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ status: 'ACCEPTED' })
+                                        }).then(() => fetchSwapRequests());
+                                    }} className="btn btn-primary btn-sm">
                                         ✓ Godta
                                     </button>
-                                    <button onClick={() => respondToSwap(req.id, 'DECLINED')} className="btn btn-secondary btn-sm">
-                                        ✗ Avslå
-                                    </button>
+                                    {req.toUser && (
+                                        <button onClick={() => {
+                                            fetch(`/api/swap-requests/${req.id}/respond`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ status: 'DECLINED' })
+                                            }).then(() => fetchSwapRequests());
+                                        }} className="btn btn-secondary btn-sm">
+                                            ✗ Avslå
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -220,13 +395,23 @@ export default function DashboardClient({ shifts, userName, userId }: DashboardC
                 </section>
             )}
 
-            {/* Team Calendar View */}
             {viewMode === 'team' ? (
                 <section className="dashboard-section">
-                    <WeekCalendar userId={userId} />
+                    <WeekCalendar
+                        userId={userId}
+                        isAdmin={isAdmin}
+                        isEditing={adminEditMode}
+                        onToggleEdit={() => setAdminEditMode(!adminEditMode)}
+                        onShiftClick={handleAdminClickShift}
+                        onAddShift={handleAdminAddShift}
+                        refreshTrigger={showAdminModal ? 0 : 1}
+                    />
+                </section>
+            ) : viewMode === 'month' ? (
+                <section className="dashboard-section">
+                    <MonthCalendar userId={userId} />
                 </section>
             ) : (
-                /* Personal Shifts View */
                 shifts.length === 0 ? (
                     <div className="empty-state">
                         <div className="empty-state-icon">📅</div>
@@ -237,129 +422,100 @@ export default function DashboardClient({ shifts, userName, userId }: DashboardC
                     </div>
                 ) : (
                     <>
-                        {/* Next shift section */}
-                        {nextShift && (
-                            <section className="dashboard-section">
-                                <h2 className="section-title">⭐ Neste vakt</h2>
-                                <div className="next-shift-wrapper">
-                                    <ShiftCard
-                                        shift={nextShift}
-                                        assignmentStatus={nextShift.assignmentStatus}
-                                        isNext={true}
-                                    />
-                                    {nextShift.status !== 'CANCELLED' && (
-                                        <button
-                                            onClick={() => openSwapModal(nextShift)}
-                                            className="btn btn-secondary btn-sm swap-btn"
-                                        >
-                                            🔄 Bytt vakt
-                                        </button>
-                                    )}
-                                </div>
-                            </section>
-                        )}
-
-                        {/* Upcoming shifts section */}
-                        {restShifts.length > 0 && (
-                            <section className="dashboard-section">
-                                <h2 className="section-title">📋 Kommende vakter</h2>
-                                <div className="shifts-grid">
-                                    {restShifts.map((shift) => {
-                                        const hasPendingSwap = swapRequests.some(
-                                            req => req.fromShift.id === shift.id &&
-                                                req.fromUser.id === userId &&
-                                                req.status === 'PENDING'
-                                        );
-
-                                        return (
-                                            <div key={shift.id} className="shift-wrapper">
-                                                <ShiftCard
-                                                    shift={shift}
-                                                    assignmentStatus={shift.assignmentStatus}
-                                                    isNext={false}
-                                                    hasPendingSwap={hasPendingSwap}
-                                                />
-                                                {shift.status !== 'CANCELLED' && !hasPendingSwap && (
-                                                    <button
-                                                        onClick={() => openSwapModal(shift)}
-                                                        className="btn btn-secondary btn-sm swap-btn"
-                                                    >
-                                                        🔄 Bytt vakt
-                                                    </button>
-                                                )}
+                        {nextShift && (() => {
+                            const pendingReq = getPendingOutgoingRequest(nextShift.id);
+                            return (
+                                <section className="dashboard-section">
+                                    <h2 className="section-title">⭐ Neste vakt</h2>
+                                    <div className="next-shift-wrapper">
+                                        <ShiftCard
+                                            shift={nextShift}
+                                            assignmentStatus={nextShift.assignmentStatus}
+                                            isNext
+                                            hasPendingSwap={!!pendingReq}
+                                            pendingRequestType={pendingReq?.fromUser.id === userId ? (pendingReq.toShift ? 'SWAP' : 'GIVE') : null}
+                                            onCancelRequest={() => pendingReq && cancelSwapRequest(pendingReq.id)}
+                                            currentUserId={userId}
+                                            onClick={() => handleOpenDayModal(nextShift.startsAt)}
+                                        />
+                                        {nextShift.status !== 'CANCELLED' && !pendingReq && (
+                                            <div className="action-buttons grid grid-2 gap-sm">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); openSwapModal(nextShift, 'swap'); }}
+                                                    className="btn btn-secondary btn-sm"
+                                                >
+                                                    🔄 Bytt vakt
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); openSwapModal(nextShift, 'give'); }}
+                                                    className="btn btn-secondary btn-sm"
+                                                >
+                                                    Gi bort
+                                                </button>
                                             </div>
-                                        );
-                                    })}
+                                        )}
+                                    </div>
+                                </section>
+                            );
+                        })()}
+
+                        {restShifts.length > 0 && (
+                            <div className="shifts-container">
+                                <h2 className="section-title">Kommende vakter</h2>
+                                <div className="shifts-grid">
+                                    {restShifts.map((shift) => (
+                                        <ShiftCard
+                                            key={shift.id}
+                                            shift={shift}
+                                            assignmentStatus={shift.assignmentStatus}
+                                            currentUserId={userId}
+                                            onClick={() => handleOpenDayModal(shift.startsAt)}
+                                        />
+                                    ))}
                                 </div>
-                            </section>
+                            </div>
                         )}
                     </>
                 )
             )}
 
-            {/* Swap Modal */}
-            {showSwapModal && (
-                <div className="modal-overlay" onClick={() => setShowSwapModal(false)}>
-                    <div className="modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2 className="modal-title">
-                                {swapStep === 'selectEmployee' ? 'Velg ansatt å bytte med' : `${selectedUser?.name}s vakter`}
-                            </h2>
-                            <button className="modal-close" onClick={() => setShowSwapModal(false)}>✕</button>
-                        </div>
+            {showAdminModal && (
+                <AdminShiftModal
+                    shift={adminSelectedShift}
+                    users={users}
+                    onClose={() => setShowAdminModal(false)}
+                    onSave={handleSaveShift}
+                    onDelete={handleDeleteShift}
+                />
+            )}
 
-                        {swapStep === 'selectEmployee' && (
-                            <div className="employee-list">
-                                {users.length === 0 ? (
-                                    <p className="text-muted">Ingen andre ansatte funnet</p>
-                                ) : (
-                                    users.map((user) => (
-                                        <button
-                                            key={user.id}
-                                            onClick={() => selectEmployee(user)}
-                                            className="employee-item card"
-                                        >
-                                            <span className="employee-name">{user.name}</span>
-                                            <span className="employee-arrow">→</span>
-                                        </button>
-                                    ))
-                                )}
-                            </div>
-                        )}
+            {showSwapModal && selectedMyShift && (
+                <SwapModal
+                    isOpen={showSwapModal}
+                    onClose={() => setShowSwapModal(false)}
+                    mode={swapMode}
+                    currentShift={selectedMyShift}
+                    step={swapStep}
+                    setStep={setSwapStep}
+                    users={users}
+                    selectedUser={selectedUser}
+                    userShifts={selectedUserShifts}
+                    loadingShifts={loadingShifts}
+                    submitting={submitting}
+                    onSelectUser={selectEmployee}
+                    onSelectShift={requestSwap}
+                    onBack={() => setSwapStep('selectEmployee')}
+                    checkUserAvailability={checkUserAvailability}
+                />
+            )}
 
-                        {swapStep === 'selectShift' && (
-                            <div className="shift-list">
-                                <button
-                                    onClick={() => setSwapStep('selectEmployee')}
-                                    className="btn btn-ghost btn-sm mb-md"
-                                >
-                                    ← Tilbake
-                                </button>
-
-                                {loadingShifts ? (
-                                    <div className="text-center">
-                                        <span className="loading-spinner" />
-                                    </div>
-                                ) : selectedUserShifts.length === 0 ? (
-                                    <p className="text-muted">Ingen kommende vakter for denne ansatte</p>
-                                ) : (
-                                    selectedUserShifts.map((shift) => (
-                                        <button
-                                            key={shift.id}
-                                            onClick={() => requestSwap(shift)}
-                                            disabled={submitting}
-                                            className="shift-item card"
-                                        >
-                                            <div className="shift-item-date">{formatDate(shift.startsAt)}</div>
-                                            <div className="shift-item-time">{formatTimeRange(shift.startsAt, shift.endsAt)}</div>
-                                            <span className="shift-item-action">Spør om bytte</span>
-                                        </button>
-                                    ))
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
+            {dayModalData && (
+                <DayDetailModal
+                    date={dayModalData.date}
+                    shiftsPromise={dayModalData.promise}
+                    currentUserId={userId}
+                    onClose={() => setDayModalData(null)}
+                />
             )}
 
             <style jsx>{`
@@ -475,72 +631,6 @@ export default function DashboardClient({ shifts, userName, userId }: DashboardC
         .swap-actions {
           display: flex;
           gap: var(--space-sm);
-        }
-
-        .employee-list {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-sm);
-        }
-
-        .employee-item {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          width: 100%;
-          text-align: left;
-          cursor: pointer;
-          border: none;
-          font-size: 1rem;
-          color: #ffffff;
-        }
-
-        .employee-name {
-          font-weight: 500;
-          color: #ffffff;
-        }
-
-        .employee-arrow {
-          color: var(--color-text-muted);
-        }
-
-        .shift-list {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-sm);
-        }
-
-        .shift-item {
-          display: flex;
-          align-items: center;
-          gap: var(--space-md);
-          width: 100%;
-          text-align: left;
-          cursor: pointer;
-          border: none;
-          font-size: 0.95rem;
-          color: #ffffff;
-        }
-
-        .shift-item:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .shift-item-date {
-          font-weight: 500;
-          min-width: 100px;
-          color: #ffffff;
-        }
-
-        .shift-item-time {
-          color: #cccccc;
-          flex: 1;
-        }
-
-        .shift-item-action {
-          color: var(--color-brand-primary);
-          font-weight: 500;
         }
       `}</style>
         </main>

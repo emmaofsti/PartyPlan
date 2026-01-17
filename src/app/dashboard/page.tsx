@@ -20,7 +20,20 @@ export default async function DashboardPage() {
             },
         },
         include: {
-            shift: true,
+            shift: {
+                include: {
+                    assignments: {
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
         },
         orderBy: {
             shift: {
@@ -35,5 +48,5 @@ export default async function DashboardPage() {
         assignmentStatus: a.assignmentStatus,
     }));
 
-    return <DashboardClient shifts={shifts} userName={session.user.name} userId={session.user.id} />;
+    return <DashboardClient shifts={shifts} userName={session.user.name} userId={session.user.id} userRole={session.user.role} />;
 }

@@ -8,13 +8,13 @@ const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@vaktplan.no';
 
 if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     console.warn('⚠️ VAPID keys are missing from environment variables. Web Push will not work.');
+} else {
+    webPush.setVapidDetails(
+        VAPID_SUBJECT,
+        VAPID_PUBLIC_KEY,
+        VAPID_PRIVATE_KEY
+    );
 }
-
-webPush.setVapidDetails(
-    VAPID_SUBJECT,
-    VAPID_PUBLIC_KEY,
-    VAPID_PRIVATE_KEY
-);
 
 export async function sendWebPush(subscription: any, payload: string | object) {
     try {

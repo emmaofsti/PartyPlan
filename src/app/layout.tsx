@@ -12,6 +12,8 @@ export const metadata: Metadata = {
   },
 };
 
+import CacheBuster from '@/components/CacheBuster';
+
 export default function RootLayout({
   children,
 }: {
@@ -27,8 +29,9 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>
+      <body suppressHydrationWarning={true}>
         <Providers>
+          <CacheBuster />
           <div className="page-container">
             <Navbar />
             {children}

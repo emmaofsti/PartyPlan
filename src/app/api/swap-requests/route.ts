@@ -13,11 +13,18 @@ export async function GET() {
         }
 
         // Get both incoming and outgoing swap requests
+        // Also get OPEN requests (where toUserId is null, and fromUserId is NOT me)
         const swapRequests = await prisma.shiftSwapRequest.findMany({
             where: {
                 OR: [
                     { fromUserId: session.user.id },
                     { toUserId: session.user.id },
+                    {
+                        AND: [
+                            { toUserId: null },
+                            { fromUserId: { not: session.user.id } }
+                        ]
+                    }
                 ],
             },
             include: {
@@ -48,9 +55,10 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { fromShiftId, toShiftId, toUserId, message } = body;
 
-        if (!fromShiftId || !toShiftId || !toUserId) {
+        // Validation: fromShiftId is required. toUserId is OPTIONAL now (for open requests).
+        if (!fromShiftId) {
             return NextResponse.json(
-                { error: 'Begge vakter og mottaker er påkrevd' },
+                { error: 'Vakt er påkrevd' },
                 { status: 400 }
             );
         }
@@ -71,28 +79,39 @@ export async function POST(request: Request) {
             );
         }
 
-        // Verify the target user owns the toShift
-        const toAssignment = await prisma.shiftAssignment.findFirst({
-            where: {
-                shiftId: toShiftId,
-                userId: toUserId,
-            },
-        });
+        // If toShiftId is present, verify ownership (this implies a specific person swap)
+        let toAssignment = null;
+        if (toShiftId) {
+            if (!toUserId) {
+                return NextResponse.json(
+                    { error: 'Mottaker må velges ved bytte mot spesifikk vakt' },
+                    { status: 400 }
+                );
+            }
 
-        if (!toAssignment) {
-            return NextResponse.json(
-                { error: 'Den valgte vakten tilhører ikke denne brukeren' },
-                { status: 400 }
-            );
+            toAssignment = await prisma.shiftAssignment.findFirst({
+                where: {
+                    shiftId: toShiftId,
+                    userId: toUserId,
+                },
+                include: { shift: true }
+            });
+
+            if (!toAssignment) {
+                return NextResponse.json(
+                    { error: 'Den valgte vakten tilhører ikke denne brukeren' },
+                    { status: 400 }
+                );
+            }
         }
 
         // Create swap request
         const swapRequest = await prisma.shiftSwapRequest.create({
             data: {
                 fromUserId: session.user.id,
-                toUserId,
+                toUserId: toUserId || null, // Can be null for open request
                 fromShiftId,
-                toShiftId,
+                toShiftId: toShiftId || null,
                 message: message || null,
                 status: 'PENDING',
             },
@@ -104,15 +123,24 @@ export async function POST(request: Request) {
             },
         });
 
-        // Send Push Notification to the recipient
-        // We do this asynchronously and don't block the response if it fails
-        const recipientSubscriptions = await prisma.pushSubscription.findMany({
-            where: { userId: toUserId },
-        });
+        // Send Push Notifications
+        import('@/lib/web-push').then(async ({ sendWebPush }) => {
+            const shiftDate = new Date(fromAssignment.shift.startsAt);
+            const dateStr = shiftDate.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' });
+            const timeStr = shiftDate.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
 
-        if (recipientSubscriptions.length > 0) {
-            import('@/lib/web-push').then(({ sendWebPush }) => {
-                const message = `Hei! ${session.user.name} ønsker å bytte vakt med deg: ${fromAssignment.shift.title} (${new Date(fromAssignment.shift.startsAt).toLocaleDateString()}). Svar i vaktplan-appen.`;
+            // Scenario 1: Specific Recipient
+            if (toUserId) {
+                const recipientSubscriptions = await prisma.pushSubscription.findMany({
+                    where: { userId: toUserId },
+                });
+
+                let messageBody = '';
+                if (toShiftId && toAssignment) {
+                    messageBody = `Hei! ${session.user.name} ønsker å bytte vakt med deg: ${fromAssignment.shift.title} (${dateStr}) mot din vakt ${toAssignment.shift.title}. Svar i vaktplan-appen.`;
+                } else {
+                    messageBody = `Hei! ${session.user.name} ønsker å gi bort vakt til deg: ${fromAssignment.shift.title} (${dateStr}). Svar i vaktplan-appen.`;
+                }
 
                 recipientSubscriptions.forEach(sub => {
                     const subscription = {
@@ -120,16 +148,44 @@ export async function POST(request: Request) {
                         keys: JSON.parse(sub.keys),
                     };
                     sendWebPush(subscription, {
-                        title: 'Nytt vaktbytte! 🔄',
-                        body: message,
+                        title: toShiftId ? 'Nytt vaktbytte! 🔄' : 'Vakt gis bort! 🎁',
+                        body: messageBody,
                     }).catch(console.error);
                 });
-            });
-        }
+            }
+            // Scenario 2: Open Request (Broadcast)
+            else {
+                // Fetch all users except sender
+                // Ideally we filter by those who can actually take the shift (e.g. active employees), 
+                // but for now we look for all PushSubscriptions where userId != sender
+                const allSubscriptions = await prisma.pushSubscription.findMany({
+                    where: {
+                        userId: { not: session.user.id }
+                    }
+                });
+
+                // Message format: "[Sender] vil gi bort vakt [dato], [tid]. Kan du jobbe?"
+                const broadcastBody = `${session.user.name} vil gi bort vakt ${dateStr}, ${timeStr}. Kan du jobbe?`;
+
+                allSubscriptions.forEach(sub => {
+                    const subscription = {
+                        endpoint: sub.endpoint,
+                        keys: JSON.parse(sub.keys),
+                    };
+                    sendWebPush(subscription, {
+                        title: 'Ledig vakt! 🎁',
+                        body: broadcastBody,
+                    }).catch(console.error);
+                });
+            }
+        });
 
         return NextResponse.json(swapRequest, { status: 201 });
     } catch (error) {
         console.error('Error creating swap request:', error);
-        return NextResponse.json({ error: 'Serverfeil' }, { status: 500 });
+        return NextResponse.json({
+            error: 'Serverfeil',
+            details: error instanceof Error ? error.message : String(error)
+        }, { status: 500 });
     }
 }

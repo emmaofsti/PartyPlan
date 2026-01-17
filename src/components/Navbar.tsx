@@ -39,13 +39,13 @@ export default function Navbar() {
           </button>
 
           <Link href="/dashboard" className="navbar-logo">
-            <div className="relative h-8 w-auto aspect-[3/1]">
+            <div style={{ position: 'relative', width: '50px', height: '50px', flexShrink: 0 }}>
               <Image
                 src="/logo-final.png"
                 alt="Party-plan Storo"
-                width={120}
-                height={40}
-                className="object-contain"
+                width={50}
+                height={50}
+                style={{ objectFit: 'contain' }}
                 priority
               />
             </div>

@@ -70,7 +70,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
         }
 
         const body = await request.json();
-        const { title, startsAt, endsAt, location, notes, status } = body;
+        const { title, startsAt, endsAt, location, notes, status, userId } = body;
 
         // Validate times if provided
         if (startsAt && endsAt) {
@@ -84,16 +84,31 @@ export async function PUT(request: Request, { params }: RouteParams) {
             }
         }
 
+        const data: any = {
+            title: title || undefined,
+            startsAt: startsAt ? new Date(startsAt) : undefined,
+            endsAt: endsAt ? new Date(endsAt) : undefined,
+            location: location || undefined,
+            notes: notes !== undefined ? notes : undefined,
+            status: status || undefined,
+        };
+
+        if (userId !== undefined) {
+            data.assignments = {
+                deleteMany: {}, // Remove existing assignments
+            };
+
+            if (userId) {
+                data.assignments.create = {
+                    userId: userId,
+                    assignmentStatus: 'ASSIGNED',
+                };
+            }
+        }
+
         const shift = await prisma.shift.update({
             where: { id },
-            data: {
-                title: title || undefined,
-                startsAt: startsAt ? new Date(startsAt) : undefined,
-                endsAt: endsAt ? new Date(endsAt) : undefined,
-                location: location || undefined,
-                notes: notes !== undefined ? notes : undefined,
-                status: status || undefined,
-            },
+            data,
             include: {
                 assignments: {
                     include: {

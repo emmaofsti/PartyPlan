@@ -73,7 +73,7 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { title, startsAt, endsAt, location, notes, status } = body;
+        const { title, startsAt, endsAt, location, notes, status, userId } = body;
 
         // Validation
         if (!title || !startsAt || !endsAt || !location) {
@@ -101,9 +101,19 @@ export async function POST(request: Request) {
                 location,
                 notes: notes || null,
                 status: status || 'PLANNED',
+                assignments: userId ? {
+                    create: {
+                        userId: userId,
+                        assignmentStatus: 'ASSIGNED',
+                    }
+                } : undefined,
             },
             include: {
-                assignments: true,
+                assignments: {
+                    include: {
+                        user: { select: { id: true, name: true, email: true } }
+                    }
+                },
             },
         });
 
