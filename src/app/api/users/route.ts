@@ -12,9 +12,7 @@ export async function GET() {
             return NextResponse.json({ error: 'Ikke autentisert' }, { status: 401 });
         }
 
-        if (session.user.role !== 'ADMIN') {
-            return NextResponse.json({ error: 'Ikke tilgang' }, { status: 403 });
-        }
+        // All authenticated users can see the list of employees (for swap/give functionality)
 
         const users = await prisma.user.findMany({
             select: {
