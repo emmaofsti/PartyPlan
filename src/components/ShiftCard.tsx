@@ -23,6 +23,8 @@ interface ShiftCardProps {
     onConfirm?: () => void;
     onDecline?: () => void;
     onClick?: () => void;
+    onSwap?: () => void;
+    onGive?: () => void;
 }
 
 export default function ShiftCard({
@@ -37,6 +39,8 @@ export default function ShiftCard({
     onCancelRequest,
     currentUserId,
     onClick,
+    onSwap,
+    onGive,
 }: ShiftCardProps & { currentUserId?: string }) {
     const isCancelled = shift.status === 'CANCELLED';
 
@@ -94,12 +98,34 @@ export default function ShiftCard({
                 </div>
             )}
 
+            {/* Swap/Give Actions */}
+            {!isCancelled && (onSwap || onGive) && (
+                <div className="shift-actions">
+                    {onSwap && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onSwap(); }}
+                            className="btn btn-secondary btn-sm flex-1"
+                        >
+                            🔄 Bytt vakt
+                        </button>
+                    )}
+                    {onGive && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onGive(); }}
+                            className="btn btn-secondary btn-sm flex-1"
+                        >
+                            Gi bort
+                        </button>
+                    )}
+                </div>
+            )}
+
             <style jsx>{`
         .shift-card {
             transition: transform 0.2s, background-color 0.2s;
             position: relative;
         }
-        .shift-card.cursor-pointer:hover {
+        .shift-card.cursor-pointer:active {
             background-color: var(--color-bg-hover, #2a2a2a);
         }
         .shift-card-header {
@@ -136,6 +162,10 @@ export default function ShiftCard({
           margin-top: var(--space-md);
           padding-top: var(--space-md);
           border-top: 1px solid var(--color-border);
+        }
+
+        .flex-1 {
+            flex: 1;
         }
       `}</style>
         </div>

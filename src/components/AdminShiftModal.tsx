@@ -198,6 +198,11 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                     max-width: 450px;
                     color: #fff;
                     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+                    display: flex;
+                    flex-direction: column;
+                    max-height: 90vh; /* Fallback for dvh */
+                    max-height: 90dvh;
+                    overflow: hidden; /* To clip content at border-radius */
                 }
                 
                 .modal-header {
@@ -205,6 +210,8 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
+                    border-bottom: 1px solid #333;
+                    flex-shrink: 0; /* Prevent header from shrinking */
                 }
                 
                 .modal-header h2 {
@@ -228,10 +235,14 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                 }
                 
                 .modal-body {
-                    padding: 0 1.5rem 1.5rem 1.5rem;
+                    padding: 1.5rem; /* Adjusted padding */
                     display: flex;
                     flex-direction: column;
                     gap: 1.25rem;
+                    overflow-y: auto;
+                    flex: 1; /* Allow it to grow and shrink */
+                    overscroll-behavior: contain; /* Prevent scrolling body behind */
+                    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); /* Account for safe area */
                 }
                 
                 .form-group {
@@ -299,7 +310,8 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
-                    margin-top: 1rem;
+                    margin-top: auto; /* Push to bottom if space allows */
+                    padding-top: 1rem;
                 }
                 
                 .action-buttons-right {

@@ -31,16 +31,35 @@ export default function DayDetailModal({ date, onClose, currentUserId, shiftsPro
         }
     }, [shiftsPromise, initialShifts]);
 
+    const handleCancelRequest = async (requestId: string) => {
+        if (!confirm('Er du sikker på at du vil trekke forespørselen?')) return;
+        try {
+            const res = await fetch(`/api/swap-requests/${requestId}`, { method: 'DELETE' });
+            if (res.ok) {
+                setShifts(prev => prev.map(s => ({
+                    ...s,
+                    swapRequestsFrom: s.swapRequestsFrom?.filter((r: any) => r.id !== requestId) || []
+                })));
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
     const formattedDate = date.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' });
 
     const userSlots = shifts.flatMap(shift =>
-        (shift.assignments || []).map((assignment: any) => ({
-            shiftId: shift.id,
-            startsAt: shift.startsAt,
-            endsAt: shift.endsAt,
-            user: assignment.user,
-            status: assignment.status
-        }))
+        (shift.assignments || []).map((assignment: any) => {
+            const myPendingReq = shift.swapRequestsFrom?.find((r: any) => r.fromUserId === assignment.user.id);
+            return {
+                shiftId: shift.id,
+                startsAt: shift.startsAt,
+                endsAt: shift.endsAt,
+                user: assignment.user,
+                status: assignment.status,
+                pendingReq: myPendingReq
+            };
+        })
     ).sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 
     return (
@@ -67,7 +86,25 @@ export default function DayDetailModal({ date, onClose, currentUserId, shiftsPro
                                         </div>
                                         <div className="slot-user">
                                             {isMe ? (
-                                                <span className="me-badge">{slot.user?.name || 'Deg'}</span>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <span className="me-badge">{slot.user?.name || 'Deg'}</span>
+                                                    {slot.pendingReq && (
+                                                        <div className="pending-req-container">
+                                                            <span className="pending-label">
+                                                                {slot.pendingReq.toShiftId ? 'Bytte forespurt' : 'Prøver å gi bort'}
+                                                            </span>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleCancelRequest(slot.pendingReq.id);
+                                                                }}
+                                                                className="btn-cancel-req"
+                                                            >
+                                                                Angre
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             ) : (
                                                 <span className="user-name">{slot.user?.name || 'Ukjent'}</span>
                                             )}
@@ -81,6 +118,26 @@ export default function DayDetailModal({ date, onClose, currentUserId, shiftsPro
             </div>
 
             <style jsx>{`
+                .pending-req-container {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    margin-top: 4px;
+                }
+                .pending-label {
+                    font-size: 0.75rem;
+                    color: #aaa;
+                    font-style: italic;
+                }
+                .btn-cancel-req {
+                    background: none;
+                    border: none;
+                    color: #ef4444;
+                    font-size: 0.75rem;
+                    text-decoration: underline;
+                    cursor: pointer;
+                    padding: 0;
+                }
                 .modal-backdrop {
                     position: fixed;
                     top: 0;

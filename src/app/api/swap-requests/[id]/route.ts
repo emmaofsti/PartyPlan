@@ -146,19 +146,46 @@ export async function PUT(
         });
 
         // Send SMS to the requester if accepted
-        if (status === 'ACCEPTED' && updatedRequest?.fromUser?.phone) {
-            import('@/lib/sms').then(({ sendSMS }) => {
+        // Send Push Notifications to the requester if accepted
+        // Send Push Notifications
+        if (updatedRequest && (status === 'ACCEPTED' || status === 'DECLINED')) {
+            import('@/lib/web-push').then(async ({ sendWebPush }) => {
+                const senderSubs = await prisma.pushSubscription.findMany({
+                    where: { userId: updatedRequest.fromUserId }
+                });
+
+                let title = '';
                 let message = '';
-                if (updatedRequest.toShift) {
-                    message = `Hei! ${updatedRequest.toUser?.name || 'Mottaker'} har godtatt bytte av vakt "${updatedRequest.fromShift.title}" mot "${updatedRequest.toShift.title}". Vaktplanen er oppdatert.`;
-                } else {
-                    message = `Hei! ${updatedRequest.toUser?.name || 'Mottaker'} har godtatt å overta vakten "${updatedRequest.fromShift.title}". Vaktplanen er oppdatert.`;
+                const responderName = session.user.name || 'Noen';
+
+                if (status === 'ACCEPTED') {
+                    title = 'Vakt oppdatert ✅';
+                    if (updatedRequest.toShift) {
+                        message = `${responderName} godtok byttet.`;
+                    } else {
+                        message = `${responderName} tok vakten din.`;
+                    }
+                } else if (status === 'DECLINED') {
+                    title = 'Forespørsel avvist ❌';
+                    if (updatedRequest.toShift) {
+                        message = `${responderName} avslo byttet.`;
+                    } else {
+                        message = `${responderName} avslo forespørselen.`;
+                    }
                 }
 
-                sendSMS(
-                    updatedRequest.fromUser.phone!,
-                    message
-                ).catch(console.error);
+                if (message) {
+                    senderSubs.forEach(sub => {
+                        const subscription = {
+                            endpoint: sub.endpoint,
+                            keys: JSON.parse(sub.keys),
+                        };
+                        sendWebPush(subscription, {
+                            title,
+                            body: message,
+                        }).catch(console.error);
+                    });
+                }
             });
         }
 

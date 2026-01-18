@@ -16,6 +16,7 @@ interface CalendarShift {
     startsAt: string;
     endsAt: string;
     assignments: ShiftAssignment[];
+    swapRequestsFrom?: { id: string; status: string; fromUserId: string; }[];
 }
 
 interface MonthCalendarProps {
@@ -182,19 +183,26 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
                             {week.days.map((item, dIndex) => {
                                 const isToday = new Date().toDateString() === item.date.toDateString();
                                 const myShift = hasMyShift(item.date);
+                                const dayShifts = getShiftsForDate(item.date);
+                                const hasPendingRequest = dayShifts.some(s =>
+                                    s.swapRequestsFrom?.some(r => r.fromUserId === userId && r.status === 'PENDING')
+                                );
 
                                 return (
                                     <div
                                         key={dIndex}
                                         className={`
-                                            calendar-day-cell 
+                                            calendar-day-cell
                                             ${!item.isCurrentMonth ? 'calendar-day-other-month' : ''}
                                             ${isToday ? 'calendar-day-today' : ''}
                                         `}
                                         onClick={() => setSelectedDate(item.date)}
                                     >
                                         <div className="day-number">{item.date.getDate()}</div>
-                                        {myShift && <div className="shift-dot"></div>}
+                                        <div className="indicators">
+                                            {myShift && <div className="shift-dot"></div>}
+                                            {hasPendingRequest && <div className="pending-dot" title="Venter på svar"></div>}
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -215,58 +223,59 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
             <style jsx>{`
         .month-calendar {
           width: 100%;
+          max-width: 100%;
         }
 
-        .calendar-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: var(--space-lg);
+            .calendar-header {
+                display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: var(--space-lg);
         }
 
-        .calendar-month-title {
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: var(--color-text-primary);
-          text-transform: capitalize;
-          margin: 0;
+            .calendar-month-title {
+                font - size: 1.25rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            text-transform: capitalize;
+            margin: 0;
         }
 
-        .calendar-grid-header {
-            display: grid;
-            grid-template-columns: 40px repeat(7, 1fr);
-            gap: 1px;
+            .calendar-grid-header {
+                display: grid;
+            grid-template-columns: 30px repeat(7, 1fr);
+            gap: 2px;
             margin-bottom: var(--space-xs);
             text-align: center;
         }
 
-        .calendar-week-label {
-            font-size: 0.75rem;
+            .calendar-week-label {
+                font - size: 0.75rem;
             color: var(--color-text-muted);
             align-self: center;
         }
 
-        .calendar-weekday-label {
-            font-size: 0.875rem;
+            .calendar-weekday-label {
+                font - size: 0.875rem;
             color: var(--color-text-secondary);
             font-weight: 500;
             padding: var(--space-xs);
         }
 
-        .calendar-grid-month {
-            display: flex;
+            .calendar-grid-month {
+                display: flex;
             flex-direction: column;
-            gap: var(--space-xs);
+            gap: 2px;
         }
 
-        .calendar-week-row {
-            display: grid;
-            grid-template-columns: 40px repeat(7, 1fr);
-            gap: var(--space-xs);
+            .calendar-week-row {
+                display: grid;
+            grid-template-columns: 30px repeat(7, 1fr);
+            gap: 2px;
         }
 
-        .calendar-week-number {
-            display: flex;
+            .calendar-week-number {
+                display: flex;
             align-items: center;
             justify-content: center;
             font-size: 0.8rem;
@@ -274,12 +283,13 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
             font-weight: 500;
         }
 
-        .calendar-day-cell {
-            aspect-ratio: 1;
+            .calendar-day-cell {
+                aspect - ratio: 1 / 1;
+            width: 100%;
             background: var(--color-bg-card);
             border: 1px solid var(--color-border);
             border-radius: var(--radius-md);
-            padding: 8px;
+            padding: 4px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -287,41 +297,60 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
             cursor: pointer;
             position: relative;
             transition: background 0.2s;
+            overflow: hidden;
+            min-height: 0;
         }
 
-        .calendar-day-cell:hover {
-            background: var(--color-bg-secondary);
+            .calendar-day-cell:hover {
+                background: var(--color-bg-secondary);
         }
 
-        .calendar-day-other-month {
-            opacity: 0.3;
+            .calendar-day-other-month {
+                opacity: 0.3;
         }
 
-        .calendar-day-today {
-            border-color: var(--color-brand-primary);
+            .calendar-day-today {
+                border - color: var(--color-brand-primary);
             box-shadow: 0 0 0 1px var(--color-brand-primary);
         }
 
-        .day-number {
-            font-size: 0.9rem;
+            .day-number {
+                font - size: 0.9rem;
             font-weight: 500;
             color: var(--color-text-primary);
         }
 
-        .shift-dot {
-            width: 8px;
-            height: 8px;
-            background-color: #ff6b8b; /* Pink */
-            border-radius: 50%;
-            margin-top: 4px;
+        .indicators {
+            display: flex;
+            gap: 4px;
+            margin-top: 2px;
+            height: 6px; /* Reserve height */
+            align-items: center;
+            justify-content: center;
         }
 
-        .calendar-loading {
-            display: flex;
+        .shift-dot {
+            width: 6px;
+            height: 6px;
+            background-color: #ff6b8b; /* Pink */
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .pending-dot {
+            width: 6px;
+            height: 6px;
+            background-color: #f59e0b; /* Amber/Orange */
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+            .calendar-loading {
+                display: flex;
             justify-content: center;
             padding: var(--space-2xl);
         }
       `}</style>
-        </div>
+        </div >
     );
 }

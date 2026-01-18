@@ -48,6 +48,10 @@ export async function GET(request: Request) {
                         },
                     },
                 },
+                swapRequestsFrom: {
+                    where: { status: 'PENDING' },
+                    select: { id: true, fromUserId: true, toUserId: true, toShiftId: true }
+                },
             },
             orderBy: { startsAt: 'asc' },
         });

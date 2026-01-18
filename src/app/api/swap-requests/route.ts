@@ -137,9 +137,9 @@ export async function POST(request: Request) {
 
                 let messageBody = '';
                 if (toShiftId && toAssignment) {
-                    messageBody = `Hei! ${session.user.name} ønsker å bytte vakt med deg: ${fromAssignment.shift.title} (${dateStr}) mot din vakt ${toAssignment.shift.title}. Svar i vaktplan-appen.`;
+                    messageBody = `${session.user.name} vil bytte vakt. Sjekk det ut.`;
                 } else {
-                    messageBody = `Hei! ${session.user.name} ønsker å gi bort vakt til deg: ${fromAssignment.shift.title} (${dateStr}). Svar i vaktplan-appen.`;
+                    messageBody = `${session.user.name} vil gi bort vakt. Sjekk det ut.`;
                 }
 
                 recipientSubscriptions.forEach(sub => {
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
                         keys: JSON.parse(sub.keys),
                     };
                     sendWebPush(subscription, {
-                        title: toShiftId ? 'Nytt vaktbytte! 🔄' : 'Vakt gis bort! 🎁',
+                        title: toShiftId ? 'Bytte forespurt 🔄' : 'Vakt gis bort 🎁',
                         body: messageBody,
                     }).catch(console.error);
                 });
@@ -164,8 +164,7 @@ export async function POST(request: Request) {
                     }
                 });
 
-                // Message format: "[Sender] vil gi bort vakt [dato], [tid]. Kan du jobbe?"
-                const broadcastBody = `${session.user.name} vil gi bort vakt ${dateStr}, ${timeStr}. Kan du jobbe?`;
+                const broadcastBody = `${session.user.name} vil gi bort vakt ${dateStr}. Sjekk det ut.`;
 
                 allSubscriptions.forEach(sub => {
                     const subscription = {

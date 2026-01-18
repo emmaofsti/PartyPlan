@@ -41,6 +41,15 @@ export async function GET(request: Request) {
                         },
                     },
                 },
+                swapRequestsFrom: {
+                    where: { status: 'PENDING' },
+                    select: {
+                        id: true,
+                        status: true,
+                        toUserId: true,
+                        fromUserId: true,
+                    }
+                },
             },
             orderBy: { startsAt: 'asc' },
         });

@@ -70,6 +70,7 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -91,8 +92,10 @@ a {
   transition: color var(--transition-fast);
 }
 
-a:hover {
-  color: var(--color-brand-light);
+@media (hover: hover) {
+  a:hover {
+    color: var(--color-brand-light);
+  }
 }
 
 /* Layout */
@@ -119,7 +122,7 @@ a:hover {
   transition: all var(--transition-normal);
 }
 
-.card:hover {
+.card:active {
   background: var(--color-bg-card-hover);
   border-color: var(--color-brand-primary);
   box-shadow: var(--shadow-glow);
@@ -164,9 +167,11 @@ a:hover {
   color: white;
 }
 
-.btn-primary:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  .btn-primary:hover:not(:disabled) {
+    box-shadow: var(--shadow-glow);
+    transform: translateY(-1px);
+  }
 }
 
 .btn-secondary {
@@ -175,9 +180,11 @@ a:hover {
   border: 1px solid var(--color-border);
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background: var(--color-bg-card-hover);
-  border-color: var(--color-brand-primary);
+@media (hover: hover) {
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-brand-primary);
+  }
 }
 
 .btn-danger {
@@ -185,8 +192,10 @@ a:hover {
   color: white;
 }
 
-.btn-danger:hover:not(:disabled) {
-  background: #dc2626;
+@media (hover: hover) {
+  .btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+  }
 }
 
 .btn-ghost {
@@ -194,9 +203,11 @@ a:hover {
   color: var(--color-text-secondary);
 }
 
-.btn-ghost:hover:not(:disabled) {
-  background: var(--color-bg-card);
-  color: var(--color-text-primary);
+@media (hover: hover) {
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-bg-card);
+    color: var(--color-text-primary);
+  }
 }
 
 .btn-lg {
@@ -589,8 +600,7 @@ tr:last-child td {
 /* Page-specific: Next shift highlight */
 .next-shift {
   position: relative;
-  background: linear-gradient(135deg, rgba(247, 143, 161, 0.1), rgba(249, 168, 182, 0.1));
-  border: 1px solid var(--color-brand-primary);
+  /* Removed glow/highlight as requested */
   overflow: hidden;
 }
 
@@ -670,4 +680,26 @@ tr:last-child td {
 
 .site-footer a:hover {
   color: var(--color-brand-primary);
+}
+
+/* Mobile Optimizations */
+@media (max-width: 640px) {
+  .btn {
+    min-height: 44px;
+    /* Touch target size */
+  }
+
+  .btn-sm {
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.875rem;
+  }
+
+  .card {
+    padding: var(--space-md);
+  }
+
+  /* Compact header on mobile */
+  .navbar-container {
+    padding: var(--space-sm);
+  }
 }

@@ -68,6 +68,7 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
     const [loadingShifts, setLoadingShifts] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [dayModalData, setDayModalData] = useState<{ date: Date, promise: Promise<any[]> } | null>(null);
+    const [showRequests, setShowRequests] = useState(true);
 
     useEffect(() => {
         fetchSwapRequests();
@@ -96,7 +97,8 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
                 if (isAdmin) {
                     setUsers(data); // Admin needs everyone
                 } else {
-                    setUsers(data.filter((u: User) => u.id !== userId && u.name.toLowerCase() !== 'emma'));
+                    // All employees can see all other employees (excluding themselves)
+                    setUsers(data.filter((u: User) => u.id !== userId));
                 }
             }
         } catch (error) {
@@ -355,43 +357,53 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
 
             {pendingIncoming.length > 0 && (
                 <section className="dashboard-section">
-                    <h2 className="section-title">📨 Forespørsler</h2>
-                    <div className="swap-requests">
-                        {pendingIncoming.map((req) => (
-                            <div key={req.id} className="card swap-request-card">
-                                <p>
-                                    <strong>{req.fromUser.name}</strong>
-                                    {req.toShift ? (
-                                        <> vil bytte sin vakt <strong>{formatDate(req.fromShift.startsAt)} {formatTimeRange(req.fromShift.startsAt, req.fromShift.endsAt)}</strong> med din vakt <strong>{formatDate(req.toShift.startsAt)} {formatTimeRange(req.toShift.startsAt, req.toShift.endsAt)}</strong></>
-                                    ) : (
-                                        <> vil gi bort vakt <strong>{formatDate(req.fromShift.startsAt)} {formatTimeRange(req.fromShift.startsAt, req.fromShift.endsAt)}</strong>. Kan du jobbe?</>
-                                    )}
-                                </p>
-                                <div className="swap-actions">
-                                    <button onClick={() => {
-                                        fetch(`/api/swap-requests/${req.id}/respond`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ status: 'ACCEPTED' })
-                                        }).then(() => fetchSwapRequests());
-                                    }} className="btn btn-primary btn-sm">
-                                        ✓ Godta
-                                    </button>
-                                    {req.toUser && (
-                                        <button onClick={() => {
-                                            fetch(`/api/swap-requests/${req.id}/respond`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ status: 'DECLINED' })
-                                            }).then(() => fetchSwapRequests());
-                                        }} className="btn btn-secondary btn-sm">
-                                            ✗ Avslå
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <h2 className="section-title" style={{ marginBottom: 0 }}>📨 Forespørsler</h2>
+                        <button
+                            onClick={() => setShowRequests(!showRequests)}
+                            className="btn btn-ghost btn-sm"
+                        >
+                            {showRequests ? 'Skjul' : 'Vis'}
+                        </button>
                     </div>
+                    {showRequests && (
+                        <div className="swap-requests">
+                            {pendingIncoming.map((req) => (
+                                <div key={req.id} className="card swap-request-card">
+                                    <p>
+                                        <strong>{req.fromUser.name}</strong>
+                                        {req.toShift ? (
+                                            <> vil bytte sin vakt <strong>{formatDate(req.fromShift.startsAt)} {formatTimeRange(req.fromShift.startsAt, req.fromShift.endsAt)}</strong> med din vakt <strong>{formatDate(req.toShift.startsAt)} {formatTimeRange(req.toShift.startsAt, req.toShift.endsAt)}</strong></>
+                                        ) : (
+                                            <> vil gi bort vakt <strong>{formatDate(req.fromShift.startsAt)} {formatTimeRange(req.fromShift.startsAt, req.fromShift.endsAt)}</strong>. Kan du jobbe?</>
+                                        )}
+                                    </p>
+                                    <div className="swap-actions">
+                                        <button onClick={() => {
+                                            fetch(`/api/swap-requests/${req.id}`, {
+                                                method: 'PUT',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ status: 'ACCEPTED' })
+                                            }).then(() => fetchSwapRequests());
+                                        }} className="btn btn-primary btn-sm">
+                                            ✓ Godta
+                                        </button>
+                                        {req.toUser && (
+                                            <button onClick={() => {
+                                                fetch(`/api/swap-requests/${req.id}`, {
+                                                    method: 'PUT',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ status: 'DECLINED' })
+                                                }).then(() => fetchSwapRequests());
+                                            }} className="btn btn-secondary btn-sm">
+                                                ✗ Avslå
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </section>
             )}
 
@@ -437,23 +449,9 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
                                             onCancelRequest={() => pendingReq && cancelSwapRequest(pendingReq.id)}
                                             currentUserId={userId}
                                             onClick={() => handleOpenDayModal(nextShift.startsAt)}
+                                            onSwap={() => openSwapModal(nextShift, 'swap')}
+                                            onGive={() => openSwapModal(nextShift, 'give')}
                                         />
-                                        {nextShift.status !== 'CANCELLED' && !pendingReq && (
-                                            <div className="action-buttons grid grid-2 gap-sm">
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); openSwapModal(nextShift, 'swap'); }}
-                                                    className="btn btn-secondary btn-sm"
-                                                >
-                                                    🔄 Bytt vakt
-                                                </button>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); openSwapModal(nextShift, 'give'); }}
-                                                    className="btn btn-secondary btn-sm"
-                                                >
-                                                    Gi bort
-                                                </button>
-                                            </div>
-                                        )}
                                     </div>
                                 </section>
                             );
@@ -470,6 +468,8 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
                                             assignmentStatus={shift.assignmentStatus}
                                             currentUserId={userId}
                                             onClick={() => handleOpenDayModal(shift.startsAt)}
+                                            onSwap={() => openSwapModal(shift, 'swap')}
+                                            onGive={() => openSwapModal(shift, 'give')}
                                         />
                                     ))}
                                 </div>

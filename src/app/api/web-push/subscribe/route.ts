@@ -14,14 +14,31 @@ export async function POST(request: Request) {
     try {
         const subscription = await request.json();
 
-        // Save subscription to database
-        await prisma.pushSubscription.create({
-            data: {
+        // Check if subscription already exists
+        const existing = await prisma.pushSubscription.findFirst({
+            where: {
                 userId: session.user.id,
                 endpoint: subscription.endpoint,
-                keys: JSON.stringify(subscription.keys),
             },
         });
+
+        if (existing) {
+            // Update keys just in case they changed
+            await prisma.pushSubscription.update({
+                where: { id: existing.id },
+                data: {
+                    keys: JSON.stringify(subscription.keys),
+                },
+            });
+        } else {
+            await prisma.pushSubscription.create({
+                data: {
+                    userId: session.user.id,
+                    endpoint: subscription.endpoint,
+                    keys: JSON.stringify(subscription.keys),
+                },
+            });
+        }
 
         return NextResponse.json({ success: true });
     } catch (error) {

@@ -6,10 +6,27 @@ import Navbar from '@/components/Navbar';
 export const metadata: Metadata = {
   title: 'Party-plan Storo - Vaktplan',
   description: 'Vaktplan for Party-plan Storo',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Vaktplan',
+  },
+  formatDetection: {
+    telephone: false,
+  },
   icons: {
     icon: '/icon-192-v1.png',
     apple: '/apple-icon-v1.png',
   },
+};
+
+export const viewport = {
+  themeColor: '#0a0a0c',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false, // For app-like feel
 };
 
 import CacheBuster from '@/components/CacheBuster';
