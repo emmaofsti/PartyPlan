@@ -124,10 +124,14 @@ export async function POST(request: Request) {
         });
 
         // Send Push Notifications
-        import('@/lib/web-push').then(async ({ sendWebPush }) => {
+        // We must await this to ensure notifications are sent before the serverless function terminates
+        try {
+            const { sendWebPush } = await import('@/lib/web-push'); // Keep dynamic if preferred for cold start, or move up. Ideally move up but dynamic is fine if awaited.
+
             const shiftDate = new Date(fromAssignment.shift.startsAt);
             const dateStr = shiftDate.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' });
-            const timeStr = shiftDate.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+
+            const notifications = [];
 
             // Scenario 1: Specific Recipient
             if (toUserId) {
@@ -142,22 +146,21 @@ export async function POST(request: Request) {
                     messageBody = `${session.user.name} vil gi bort vakt. Sjekk det ut.`;
                 }
 
-                recipientSubscriptions.forEach(sub => {
+                for (const sub of recipientSubscriptions) {
                     const subscription = {
                         endpoint: sub.endpoint,
                         keys: JSON.parse(sub.keys),
                     };
-                    sendWebPush(subscription, {
-                        title: toShiftId ? 'Bytte forespurt 🔄' : 'Vakt gis bort 🎁',
-                        body: messageBody,
-                    }).catch(console.error);
-                });
+                    notifications.push(
+                        sendWebPush(subscription, {
+                            title: toShiftId ? 'Bytte forespurt 🔄' : 'Vakt gis bort 🎁',
+                            body: messageBody,
+                        })
+                    );
+                }
             }
             // Scenario 2: Open Request (Broadcast)
             else {
-                // Fetch all users except sender
-                // Ideally we filter by those who can actually take the shift (e.g. active employees), 
-                // but for now we look for all PushSubscriptions where userId != sender
                 const allSubscriptions = await prisma.pushSubscription.findMany({
                     where: {
                         userId: { not: session.user.id }
@@ -166,18 +169,26 @@ export async function POST(request: Request) {
 
                 const broadcastBody = `${session.user.name} vil gi bort vakt ${dateStr}. Sjekk det ut.`;
 
-                allSubscriptions.forEach(sub => {
+                for (const sub of allSubscriptions) {
                     const subscription = {
                         endpoint: sub.endpoint,
                         keys: JSON.parse(sub.keys),
                     };
-                    sendWebPush(subscription, {
-                        title: 'Ledig vakt! 🎁',
-                        body: broadcastBody,
-                    }).catch(console.error);
-                });
+                    notifications.push(
+                        sendWebPush(subscription, {
+                            title: 'Ledig vakt! 🎁',
+                            body: broadcastBody,
+                        })
+                    );
+                }
             }
-        });
+
+            await Promise.all(notifications);
+
+        } catch (pushError) {
+            console.error('Failed to send push notifications:', pushError);
+            // We don't fail the request if push fails, but we log it.
+        }
 
         return NextResponse.json(swapRequest, { status: 201 });
     } catch (error) {

@@ -1,6 +1,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import prisma from './prisma';
+import bcrypt from 'bcryptjs';
 
 export const authOptions: NextAuthOptions = {
     providers: [
@@ -8,6 +9,7 @@ export const authOptions: NextAuthOptions = {
             name: 'Credentials',
             credentials: {
                 name: { label: 'Fornavn', type: 'text' },
+                password: { label: 'Passord', type: 'password' },
             },
             async authorize(credentials) {
                 if (!credentials?.name) {
@@ -16,7 +18,7 @@ export const authOptions: NextAuthOptions = {
 
                 const searchName = credentials.name.trim().toLowerCase();
 
-                // Find user by name (case insensitive for SQLite)
+                // Find user by name (case insensitive)
                 const users = await prisma.user.findMany({
                     where: { active: true },
                 });
@@ -27,6 +29,22 @@ export const authOptions: NextAuthOptions = {
 
                 if (!user) {
                     throw new Error('Finner ikke bruker med det navnet');
+                }
+
+                // If user has a password, verify it
+                if (user.password) {
+                    if (!credentials.password) {
+                        throw new Error('Passord er påkrevd');
+                    }
+
+                    const isValidPassword = await bcrypt.compare(
+                        credentials.password,
+                        user.password
+                    );
+
+                    if (!isValidPassword) {
+                        throw new Error('Feil passord');
+                    }
                 }
 
                 return {

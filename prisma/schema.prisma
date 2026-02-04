@@ -13,7 +13,8 @@ model User {
   name      String
   email     String   @unique
   phone     String?
-  password  String
+  birthday  DateTime?
+  password  String?
   role      String   @default("EMPLOYEE")
   active    Boolean  @default(true)
   createdAt DateTime @default(now())

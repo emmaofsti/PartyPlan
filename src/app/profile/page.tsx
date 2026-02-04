@@ -19,6 +19,8 @@ export default async function ProfilePage() {
             email: true,
             phone: true,
             role: true,
+            password: true,
+            birthday: true,
             createdAt: true,
         },
     });
@@ -27,5 +29,12 @@ export default async function ProfilePage() {
         redirect('/login');
     }
 
-    return <ProfileClient user={user} />;
+    const userWithPasswordStatus = {
+        ...user,
+        hasPassword: !!user.password,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...userSafe } = userWithPasswordStatus;
+
+    return <ProfileClient user={userSafe} hasPassword={userWithPasswordStatus.hasPassword} />;
 }

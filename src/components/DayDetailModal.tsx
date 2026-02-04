@@ -7,9 +7,10 @@ interface DayDetailModalProps {
     currentUserId: string;
     shiftsPromise?: Promise<any[]>;
     shifts?: any[];
+    birthdays?: { name: string; birthday: string }[];
 }
 
-export default function DayDetailModal({ date, onClose, currentUserId, shiftsPromise, shifts: initialShifts }: DayDetailModalProps) {
+export default function DayDetailModal({ date, onClose, currentUserId, shiftsPromise, shifts: initialShifts, birthdays }: DayDetailModalProps) {
     const [shifts, setShifts] = useState<any[]>(initialShifts || []);
     const [loading, setLoading] = useState(!initialShifts);
 
@@ -71,6 +72,11 @@ export default function DayDetailModal({ date, onClose, currentUserId, shiftsPro
                 </div>
 
                 <div className="modal-body">
+                    {birthdays && birthdays.length > 0 && (
+                        <div className="birthday-banner">
+                            🎉 {birthdays.map(b => b.name).join(' og ')} har bursdag!
+                        </div>
+                    )}
                     {loading ? (
                         <div className="loading">Laster...</div>
                     ) : userSlots.length === 0 ? (
@@ -251,6 +257,23 @@ export default function DayDetailModal({ date, onClose, currentUserId, shiftsPro
                     text-align: center;
                     color: #666;
                     padding: 2rem;
+                }
+
+                .birthday-banner {
+                    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+                    color: #000;
+                    padding: 1rem;
+                    border-radius: 12px;
+                    margin-bottom: 1rem;
+                    font-weight: 600;
+                    text-align: center;
+                    animation: popIn 0.3s ease-out;
+                    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.2);
+                }
+                
+                @keyframes popIn {
+                    from { opacity: 0; transform: scale(0.95); }
+                    to { opacity: 1; transform: scale(1); }
                 }
             `}</style>
         </div>

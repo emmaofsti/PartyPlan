@@ -23,15 +23,36 @@ interface MonthCalendarProps {
     userId: string;
 }
 
+interface Birthday {
+    name: string;
+    birthday: string;
+}
+
 export default function MonthCalendar({ userId }: MonthCalendarProps) {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [shifts, setShifts] = useState<CalendarShift[]>([]);
+    const [birthdays, setBirthdays] = useState<Birthday[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
     useEffect(() => {
         fetchMonthShifts();
     }, [currentDate]);
+
+    useEffect(() => {
+        fetchBirthdays();
+    }, []);
+
+    const fetchBirthdays = async () => {
+        try {
+            const res = await fetch('/api/users/birthdays');
+            if (res.ok) {
+                setBirthdays(await res.json());
+            }
+        } catch (error) {
+            console.error('Failed to fetch birthdays:', error);
+        }
+    };
 
     const fetchMonthShifts = async () => {
         setLoading(true);
@@ -141,6 +162,14 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
         });
     };
 
+    const getBirthdaysForDate = (date: Date) => {
+        return birthdays.filter(b => {
+            const bDate = new Date(b.birthday);
+            return bDate.getDate() === date.getDate() &&
+                bDate.getMonth() === date.getMonth();
+        });
+    };
+
     const changeMonth = (delta: number) => {
         const newDate = new Date(currentDate);
         newDate.setMonth(newDate.getMonth() + delta);
@@ -184,6 +213,7 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
                                 const isToday = new Date().toDateString() === item.date.toDateString();
                                 const myShift = hasMyShift(item.date);
                                 const dayShifts = getShiftsForDate(item.date);
+                                const dayBirthdays = getBirthdaysForDate(item.date);
                                 const hasPendingRequest = dayShifts.some(s =>
                                     s.swapRequestsFrom?.some(r => r.fromUserId === userId && r.status === 'PENDING')
                                 );
@@ -202,6 +232,12 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
                                         <div className="indicators">
                                             {myShift && <div className="shift-dot"></div>}
                                             {hasPendingRequest && <div className="pending-dot" title="Venter på svar"></div>}
+                                            {dayBirthdays.length > 0 && (
+                                                <div
+                                                    className="birthday-dot"
+                                                    title={`Bursdag: ${dayBirthdays.map(b => b.name).join(', ')}`}
+                                                />
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -217,6 +253,7 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
                     shifts={getShiftsForDate(selectedDate)}
                     currentUserId={userId}
                     onClose={() => setSelectedDate(null)}
+                    birthdays={getBirthdaysForDate(selectedDate)}
                 />
             )}
 
@@ -341,6 +378,14 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
             width: 6px;
             height: 6px;
             background-color: #f59e0b; /* Amber/Orange */
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .birthday-dot {
+            width: 6px;
+            height: 6px;
+            background-color: #fbbf24; /* Yellow/Gold */
             border-radius: 50%;
             flex-shrink: 0;
         }

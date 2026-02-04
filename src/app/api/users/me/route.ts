@@ -21,6 +21,7 @@ export async function GET() {
                 phone: true,
                 role: true,
                 active: true,
+                birthday: true,
                 createdAt: true,
             },
         });
@@ -46,15 +47,16 @@ export async function PUT(request: Request) {
         }
 
         const body = await request.json();
-        const { name, email, phone } = body;
+        const { name, email, phone, birthday } = body;
 
-        // Allow updating name, email and phone for own profile
+        // Allow updating name, email, phone and birthday for own profile
         const user = await prisma.user.update({
             where: { id: session.user.id },
             data: {
                 name: name || undefined,
                 email: email || undefined,
                 phone: phone !== undefined ? phone : undefined,
+                birthday: birthday ? new Date(birthday) : undefined,
             },
             select: {
                 id: true,
@@ -63,6 +65,7 @@ export async function PUT(request: Request) {
                 phone: true,
                 role: true,
                 active: true,
+                birthday: true,
                 createdAt: true,
             },
         });

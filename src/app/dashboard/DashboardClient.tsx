@@ -345,13 +345,13 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
                     className={`view-toggle-btn ${viewMode === 'team' ? 'active' : ''}`}
                     onClick={() => setViewMode('team')}
                 >
-                    👥 Felles vaktplan
+                    👥 Ukeplan
                 </button>
                 <button
                     className={`view-toggle-btn ${viewMode === 'month' ? 'active' : ''}`}
                     onClick={() => setViewMode('month')}
                 >
-                    📅 Mnd oversikt
+                    📅 Kalender
                 </button>
             </div>
 
