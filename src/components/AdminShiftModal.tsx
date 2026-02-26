@@ -420,6 +420,69 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                 .btn-danger:hover:not(:disabled) {
                     text-decoration: underline;
                 }
+
+                /* Mobile optimizations */
+                @media (max-width: 500px) {
+                    .modal-overlay {
+                        align-items: flex-end;
+                    }
+
+                    .modal {
+                        max-width: 100%;
+                        border-radius: 16px 16px 0 0;
+                        max-height: 85vh;
+                        max-height: 85dvh;
+                        border-bottom: none;
+                    }
+
+                    .modal-header {
+                        padding: 1rem 1.25rem;
+                    }
+
+                    .modal-header h2 {
+                        font-size: 1.1rem;
+                    }
+
+                    .modal-body {
+                        padding: 1rem 1.25rem;
+                        gap: 1rem;
+                        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+                    }
+
+                    .time-presets {
+                        gap: 0.4rem;
+                    }
+
+                    .time-preset-btn {
+                        padding: 0.65rem 0.25rem;
+                        font-size: 0.8rem;
+                        min-height: 44px;
+                    }
+
+                    .input {
+                        padding: 0.75rem;
+                        font-size: 0.9rem;
+                        min-height: 44px;
+                    }
+
+                    textarea.input {
+                        min-height: 70px;
+                    }
+
+                    .form-row {
+                        gap: 0.75rem;
+                    }
+
+                    .btn {
+                        padding: 0.7rem 1.25rem;
+                        font-size: 0.9rem;
+                        min-height: 44px;
+                    }
+
+                    .form-actions {
+                        padding-top: 0.5rem;
+                    }
+                }
             `}</style>
         </div>
     );
