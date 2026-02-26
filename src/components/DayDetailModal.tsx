@@ -8,9 +8,11 @@ interface DayDetailModalProps {
     shiftsPromise?: Promise<any[]>;
     shifts?: any[];
     birthdays?: { name: string; birthday: string }[];
+    isAdmin?: boolean;
+    onAddShift?: (date: Date) => void;
 }
 
-export default function DayDetailModal({ date, onClose, currentUserId, shiftsPromise, shifts: initialShifts, birthdays }: DayDetailModalProps) {
+export default function DayDetailModal({ date, onClose, currentUserId, shiftsPromise, shifts: initialShifts, birthdays, isAdmin, onAddShift }: DayDetailModalProps) {
     const [shifts, setShifts] = useState<any[]>(initialShifts || []);
     const [loading, setLoading] = useState(!initialShifts);
 
@@ -119,6 +121,15 @@ export default function DayDetailModal({ date, onClose, currentUserId, shiftsPro
                                 );
                             })}
                         </div>
+                    )}
+
+                    {isAdmin && onAddShift && (
+                        <button
+                            className="btn-add-shift"
+                            onClick={() => { onClose(); onAddShift(date); }}
+                        >
+                            + Legg til vakt
+                        </button>
                     )}
                 </div>
             </div>
@@ -257,6 +268,26 @@ export default function DayDetailModal({ date, onClose, currentUserId, shiftsPro
                     text-align: center;
                     color: #666;
                     padding: 2rem;
+                }
+
+                .btn-add-shift {
+                    width: 100%;
+                    margin-top: 1rem;
+                    padding: 0.75rem;
+                    background: transparent;
+                    border: 1px dashed #444;
+                    border-radius: 10px;
+                    color: #888;
+                    font-size: 0.9rem;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+
+                .btn-add-shift:hover {
+                    border-color: #f78fa1;
+                    color: #f78fa1;
+                    background: rgba(247, 143, 161, 0.05);
                 }
 
                 .birthday-banner {

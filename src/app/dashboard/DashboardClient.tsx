@@ -55,6 +55,7 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
     const [adminEditMode, setAdminEditMode] = useState(false);
     const [showAdminModal, setShowAdminModal] = useState(false);
     const [adminSelectedShift, setAdminSelectedShift] = useState<any | null>(null);
+    const [adminPrefillDate, setAdminPrefillDate] = useState<Date | undefined>(undefined);
 
     // Swap flow state
     const [showSwapModal, setShowSwapModal] = useState(false);
@@ -276,6 +277,13 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
 
     const handleAdminAddShift = () => {
         setAdminSelectedShift(null); // New shift
+        setAdminPrefillDate(undefined);
+        setShowAdminModal(true);
+    };
+
+    const handleAddShiftFromDate = (date: Date) => {
+        setAdminSelectedShift(null);
+        setAdminPrefillDate(date);
         setShowAdminModal(true);
     };
 
@@ -339,19 +347,19 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
                     className={`view-toggle-btn ${viewMode === 'mine' ? 'active' : ''}`}
                     onClick={() => setViewMode('mine')}
                 >
-                    📋 Mine vakter
+                    Mine vakter
                 </button>
                 <button
                     className={`view-toggle-btn ${viewMode === 'team' ? 'active' : ''}`}
                     onClick={() => setViewMode('team')}
                 >
-                    👥 Ukeplan
+                    Ukeplan
                 </button>
                 <button
                     className={`view-toggle-btn ${viewMode === 'month' ? 'active' : ''}`}
                     onClick={() => setViewMode('month')}
                 >
-                    📅 Kalender
+                    Kalender
                 </button>
             </div>
 
@@ -421,7 +429,7 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
                 </section>
             ) : viewMode === 'month' ? (
                 <section className="dashboard-section">
-                    <MonthCalendar userId={userId} />
+                    <MonthCalendar userId={userId} isAdmin={isAdmin} onAddShift={handleAddShiftFromDate} />
                 </section>
             ) : (
                 shifts.length === 0 ? (
@@ -486,6 +494,7 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
                     onClose={() => setShowAdminModal(false)}
                     onSave={handleSaveShift}
                     onDelete={handleDeleteShift}
+                    prefillDate={adminPrefillDate}
                 />
             )}
 
@@ -515,6 +524,8 @@ export default function DashboardClient({ shifts, userName, userId, userRole }: 
                     shiftsPromise={dayModalData.promise}
                     currentUserId={userId}
                     onClose={() => setDayModalData(null)}
+                    isAdmin={isAdmin}
+                    onAddShift={handleAddShiftFromDate}
                 />
             )}
 

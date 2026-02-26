@@ -20,11 +20,11 @@ export default function AdminClient() {
           <span className="admin-nav-arrow">→</span>
         </Link>
 
-        <Link href="/admin/shifts" className="admin-nav-card card">
-          <div className="admin-nav-icon">📅</div>
+        <Link href="/admin/monthly" className="admin-nav-card card">
+          <div className="admin-nav-icon">📋</div>
           <div>
-            <h3>Vakter</h3>
-            <p>Opprett og administrer vakter</p>
+            <h3>Månedsplan</h3>
+            <p>Se og legg inn vakter for hele måneden</p>
           </div>
           <span className="admin-nav-arrow">→</span>
         </Link>

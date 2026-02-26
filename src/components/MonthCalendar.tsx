@@ -21,6 +21,8 @@ interface CalendarShift {
 
 interface MonthCalendarProps {
     userId: string;
+    isAdmin?: boolean;
+    onAddShift?: (date: Date) => void;
 }
 
 interface Birthday {
@@ -28,7 +30,7 @@ interface Birthday {
     birthday: string;
 }
 
-export default function MonthCalendar({ userId }: MonthCalendarProps) {
+export default function MonthCalendar({ userId, isAdmin, onAddShift }: MonthCalendarProps) {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [shifts, setShifts] = useState<CalendarShift[]>([]);
     const [birthdays, setBirthdays] = useState<Birthday[]>([]);
@@ -254,6 +256,8 @@ export default function MonthCalendar({ userId }: MonthCalendarProps) {
                     currentUserId={userId}
                     onClose={() => setSelectedDate(null)}
                     birthdays={getBirthdaysForDate(selectedDate)}
+                    isAdmin={isAdmin}
+                    onAddShift={onAddShift}
                 />
             )}
 

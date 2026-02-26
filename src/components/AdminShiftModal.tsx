@@ -12,10 +12,17 @@ interface AdminShiftModalProps {
     onClose: () => void;
     onSave: (shiftData: any) => Promise<void>;
     onDelete: (shiftId: string) => Promise<void>;
+    prefillDate?: Date;
 }
 
-export default function AdminShiftModal({ shift, users, onClose, onSave, onDelete }: AdminShiftModalProps) {
-    const [date, setDate] = useState(shift ? new Date(shift.startsAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+export default function AdminShiftModal({ shift, users, onClose, onSave, onDelete, prefillDate }: AdminShiftModalProps) {
+    const formatLocalDate = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+    const [date, setDate] = useState(shift ? formatLocalDate(new Date(shift.startsAt)) : prefillDate ? formatLocalDate(prefillDate) : formatLocalDate(new Date()));
     const [startTime, setStartTime] = useState(shift ? new Date(shift.startsAt).toTimeString().substring(0, 5) : '22:00');
     const [endTime, setEndTime] = useState(shift ? new Date(shift.endsAt).toTimeString().substring(0, 5) : '03:00');
     const [notes, setNotes] = useState(shift?.notes || '');
@@ -90,6 +97,26 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                             required
                             className="input"
                         />
+                    </div>
+
+                    <div className="form-group">
+                        <label>Velg vakttype</label>
+                        <div className="time-presets">
+                            {[
+                                { label: '10:00 – 17:00', start: '10:00', end: '17:00' },
+                                { label: '12:00 – 19:00', start: '12:00', end: '19:00' },
+                                { label: '17:00 – 21:15', start: '17:00', end: '21:15' },
+                            ].map((preset) => (
+                                <button
+                                    key={preset.label}
+                                    type="button"
+                                    className={`time-preset-btn ${startTime === preset.start && endTime === preset.end ? 'active' : ''}`}
+                                    onClick={() => { setStartTime(preset.start); setEndTime(preset.end); }}
+                                >
+                                    {preset.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     <div className="form-row">
@@ -314,6 +341,37 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                     padding-top: 1rem;
                 }
                 
+                .time-presets {
+                    display: flex;
+                    gap: 0.5rem;
+                }
+
+                .time-preset-btn {
+                    flex: 1;
+                    padding: 0.7rem 0.5rem;
+                    background: #252525;
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    color: #aaa;
+                    font-size: 0.85rem;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    text-align: center;
+                }
+
+                .time-preset-btn:hover {
+                    border-color: #555;
+                    color: #fff;
+                }
+
+                .time-preset-btn.active {
+                    border-color: #f78fa1;
+                    background: rgba(247, 143, 161, 0.15);
+                    color: #f78fa1;
+                    font-weight: 600;
+                }
+
                 .action-buttons-right {
                     display: flex;
                     gap: 0.75rem;
