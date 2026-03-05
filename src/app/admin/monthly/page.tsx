@@ -129,6 +129,7 @@ export default function MonthlyPage() {
     const [targetWeekNum, setTargetWeekNum] = useState<number | null>(null);
     const hasScrolledToCurrentWeek = useRef(false);
     const [showFromWeek, setShowFromWeek] = useState<number | null>(null); // null = use currentWeekNum
+    const [printWeeksByWeekNum, setPrintWeeksByWeekNum] = useState<Record<number, number>>({});
     // Position of the open dropdown (for fixed positioning)
     const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
     // Refs for editing context
@@ -464,57 +465,168 @@ export default function MonthlyPage() {
         }
     }, [targetWeekNum, displayedWeeks]);
 
-    const printWeek = async (week: Date[], weekNum: number) => {
+    const printWeeks = async (startWeekIdx: number, requestedWeekCount: number) => {
+        const maxAvailableWeeks = Math.max(1, Math.min(2, displayedWeeks.length - startWeekIdx));
+        const weekCount = Math.max(1, Math.min(maxAvailableWeeks, requestedWeekCount || 1));
+        const weeksToPrint = displayedWeeks.slice(startWeekIdx, startWeekIdx + weekCount);
+        if (weeksToPrint.length === 0) return;
+
         // Always fetch the latest data before printing (silent)
         const latestGridData = await fetchData(true) || gridData;
 
         const fmtDate = (d: Date) => d.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' });
         const fmtShort = (d: Date) => d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' });
 
-        const headerCols = week.map(d => `<th style="padding:6px 10px;background:#f5f5f5;text-align:center;border:1px solid #ddd;">${fmtDate(d)}</th>`).join('');
+        const buildWeekSection = (week: Date[]) => {
+            const weekNum = getWeekNumber(week[0]);
+            const firstDay = week[0];
+            const lastDay = week[week.length - 1];
+            const headerCols = week.map(d => `<th>${fmtDate(d)}</th>`).join('');
 
-        const bodyRows = TIME_SLOTS.map((slot, slotIdx) => {
-            const dateCols = week.map(date => {
-                const cellKey = `${dateToKey(date)}|${slotIdx}`;
-                const cell = latestGridData[cellKey];
-                const name = cell?.userName ?? '';
-                const time = slot.isCustom && cell?.customStart ? `${cell.customStart}–${cell.customEnd}` : (slot.isCustom ? '' : slot.label);
-                return `<td style="padding:6px 10px;border:1px solid #ddd;text-align:center;">
-                    ${name ? `<strong>${name}</strong>${time ? `<br/><small style="color:#666">${time}</small>` : ''}` : '<span style="color:#ccc">–</span>'}
-                </td>`;
+            const bodyRows = TIME_SLOTS.map((slot, slotIdx) => {
+                const dateCols = week.map(date => {
+                    const cellKey = `${dateToKey(date)}|${slotIdx}`;
+                    const cell = latestGridData[cellKey];
+                    const name = cell?.userName ?? '';
+                    const time = slot.isCustom
+                        ? (cell?.customStart && cell?.customEnd ? `${cell.customStart}–${cell.customEnd}` : '')
+                        : slot.label;
+                    return `<td>
+                        ${name ? `<strong>${name}</strong>${time ? `<br/><small>${time}</small>` : ''}` : '<span class="empty">–</span>'}
+                    </td>`;
+                }).join('');
+                return `<tr>${dateCols}</tr>`;
             }).join('');
-            return `<tr>
-                ${dateCols}
-            </tr>`;
-        }).join('');
 
-        const firstDay = week[0];
-        const lastDay = week[week.length - 1];
+            return `<section class="week-card">
+  <h2>Uke ${weekNum}</h2>
+  <p>${fmtShort(firstDay)} – ${fmtShort(lastDay)}</p>
+  <table>
+    <thead><tr>${headerCols}</tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table>
+</section>`;
+        };
+
+        const firstDay = weeksToPrint[0][0];
+        const lastWeek = weeksToPrint[weeksToPrint.length - 1];
+        const lastDay = lastWeek[lastWeek.length - 1];
+        const allWeekSections = weeksToPrint.map(buildWeekSection).join('');
 
         const html = `<!DOCTYPE html>
 <html lang="nb">
 <head>
 <meta charset="UTF-8">
-<title>Uke ${weekNum} – Vaktplan</title>
+<title>Vaktplan – ${weeksToPrint.length} uke${weeksToPrint.length === 1 ? '' : 'r'}</title>
 <style>
-  @page { size: A4 landscape; margin: 15mm; }
-  body { font-family: Arial, sans-serif; color: #1a1a1a; font-size: 12px; }
-  h1 { font-size: 16px; margin-bottom: 2px; }
-  p { margin: 0 0 12px; color: #555; font-size: 11px; }
-  table { width: 100%; border-collapse: collapse; }
+  @page { size: A4 landscape; margin: 6mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; }
+  body { font-family: Arial, sans-serif; color: #1a1a1a; font-size: 11px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  #range { margin: 0 0 6px; color: #555; font-size: 10px; }
+  #print-sheet { width: 100%; height: 100%; overflow: hidden; }
+  #print-content { transform-origin: top left; }
+  .weeks-grid {
+    display: grid;
+    gap: 6px;
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+  .weeks-grid.count-2 {
+    grid-template-columns: 1fr 1fr;
+    height: calc(100vh - 44px);
+    align-items: stretch;
+  }
+  .week-card {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 6px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .week-card h2 {
+    margin: 0 0 2px;
+    font-size: 12px;
+  }
+  .week-card p {
+    margin: 0 0 5px;
+    color: #666;
+    font-size: 10px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  th, td {
+    border: 1px solid #ddd;
+    text-align: center;
+    vertical-align: middle;
+    padding: 2px 3px;
+    font-size: 9px;
+    line-height: 1.1;
+    word-break: break-word;
+  }
+  th { background: #f5f5f5; font-weight: 600; }
+  td small { color: #666; font-size: 8px; }
+  .empty { color: #bbb; }
+  .weeks-grid.count-2 .week-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+  }
+  .weeks-grid.count-2 table {
+    flex: 1;
+    height: 100%;
+  }
+  .weeks-grid.count-2 tbody tr {
+    height: 12.5%;
+  }
+  .weeks-grid.count-2 th, .weeks-grid.count-2 td { font-size: 8.5px; padding: 2px; }
+  .weeks-grid.count-2 td small { font-size: 7.5px; }
   @media print { button { display: none; } }
 </style>
 </head>
 <body>
-  <h1>Uke ${weekNum} – Vaktplan</h1>
-  <p>${fmtShort(firstDay)} – ${fmtShort(lastDay)}</p>
-  <table>
-    <thead><tr>
-      ${headerCols}
-    </tr></thead>
-    <tbody>${bodyRows}</tbody>
-  </table>
-  <script>window.onload = function() { window.print(); }<\/script>
+  <div id="print-sheet">
+    <div id="print-content">
+      <h1>Vaktplan – ${weeksToPrint.length} uke${weeksToPrint.length === 1 ? '' : 'r'}</h1>
+      <p id="range">${fmtShort(firstDay)} – ${fmtShort(lastDay)}</p>
+      <div class="weeks-grid count-${weeksToPrint.length}">
+        ${allWeekSections}
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const fitToOnePage = () => {
+        const sheet = document.getElementById('print-sheet');
+        const content = document.getElementById('print-content');
+        if (!sheet || !content) return;
+        content.style.transform = 'scale(1)';
+        content.style.width = '100%';
+        const rawScale = Math.min(
+          sheet.clientWidth / content.scrollWidth,
+          sheet.clientHeight / content.scrollHeight
+        );
+        const maxScale = ${weeksToPrint.length} === 2 ? 1.12 : 1;
+        const scale = Math.min(maxScale, rawScale);
+        if (Number.isFinite(scale) && scale > 0 && Math.abs(scale - 1) > 0.01) {
+          content.style.transform = 'scale(' + scale + ')';
+          content.style.width = (100 / scale) + '%';
+        }
+      };
+      window.onload = function () {
+        fitToOnePage();
+        setTimeout(function () {
+          fitToOnePage();
+          window.print();
+        }, 80);
+      };
+    })();
+  <\/script>
 </body>
 </html>`;
 
@@ -563,6 +675,8 @@ export default function MonthlyPage() {
                 <div className="grid-wrapper">
                     {displayedWeeks.map((week: Date[], weekIdx: number) => {
                         const weekNum = getWeekNumber(week[0]);
+                        const maxPrintWeeks = Math.max(1, Math.min(2, displayedWeeks.length - weekIdx));
+                        const selectedPrintWeeks = Math.min(printWeeksByWeekNum[weekNum] ?? 1, maxPrintWeeks);
                         return (
                             <div key={weekIdx} id={`week-block-${weekNum}`} className={`week-block ${targetWeekNum === weekNum ? 'week-highlight' : ''}`}>
                                 <div className="week-header">
@@ -594,11 +708,28 @@ export default function MonthlyPage() {
                                             Uke {weekNum} ✎
                                         </span>
                                     )}
-                                    <button
-                                        className="print-week-btn"
-                                        title={`Skriv ut uke ${weekNum}`}
-                                        onClick={() => printWeek(week, weekNum)}
-                                    >🖨️ Skriv ut</button>
+                                    <div className="print-controls">
+                                        <select
+                                            className="print-weeks-select"
+                                            aria-label={`Velg antall uker for utskrift fra uke ${weekNum}`}
+                                            value={selectedPrintWeeks}
+                                            onChange={(e) => {
+                                                const value = parseInt(e.target.value, 10);
+                                                setPrintWeeksByWeekNum((prev) => ({ ...prev, [weekNum]: value }));
+                                            }}
+                                        >
+                                            {Array.from({ length: maxPrintWeeks }, (_, i) => i + 1).map((count) => (
+                                                <option key={count} value={count}>
+                                                    {count} uke{count === 1 ? '' : 'r'}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            className="print-week-btn"
+                                            title={`Skriv ut ${selectedPrintWeeks} uke${selectedPrintWeeks === 1 ? '' : 'r'} fra uke ${weekNum}`}
+                                            onClick={() => printWeeks(weekIdx, selectedPrintWeeks)}
+                                        >🖨️ Skriv ut</button>
+                                    </div>
                                 </div>
                                 <div className="grid-table-scroll">
                                     <table className="grid-table">
@@ -844,6 +975,22 @@ export default function MonthlyPage() {
                     align-items: center;
                     gap: 4px;
                     transition: background 0.15s, color 0.15s;
+                }
+
+                .print-controls {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+
+                .print-weeks-select {
+                    border: 1px solid var(--color-border);
+                    border-radius: var(--radius-sm);
+                    background: var(--color-bg-card);
+                    color: var(--color-text-primary);
+                    font-size: 0.75rem;
+                    padding: 3px 6px;
+                    height: 26px;
                 }
 
                 .print-week-btn:hover {
