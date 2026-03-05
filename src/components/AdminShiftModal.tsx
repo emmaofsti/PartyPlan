@@ -33,35 +33,42 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSubmitting) return;
         setIsSubmitting(true);
 
-        const startsAt = new Date(`${date}T${startTime}:00`);
-        const endsAt = new Date(`${date}T${endTime}:00`);
+        try {
+            const startsAt = new Date(`${date}T${startTime}:00`);
+            const endsAt = new Date(`${date}T${endTime}:00`);
 
-        // Handle next day end time
-        if (endsAt < startsAt) {
-            endsAt.setDate(endsAt.getDate() + 1);
+            // Handle next day end time
+            if (endsAt < startsAt) {
+                endsAt.setDate(endsAt.getDate() + 1);
+            }
+
+            const shiftData = {
+                id: shift?.id,
+                title: 'Vakt', // Default title as requested
+                startsAt: startsAt.toISOString(),
+                endsAt: endsAt.toISOString(),
+                location: 'Ausland', // Default location as requested
+                notes,
+                userId: selectedUserId || null
+            };
+
+            await onSave(shiftData);
+        } finally {
+            setIsSubmitting(false);
         }
-
-        const shiftData = {
-            id: shift?.id,
-            title: 'Vakt', // Default title as requested
-            startsAt: startsAt.toISOString(),
-            endsAt: endsAt.toISOString(),
-            location: 'Ausland', // Default location as requested
-            notes,
-            userId: selectedUserId || null
-        };
-
-        await onSave(shiftData);
-        setIsSubmitting(false);
     };
 
     const handleDelete = async () => {
         if (confirm('Er du sikker på at du vil slette denne vakten?')) {
             setIsSubmitting(true);
-            await onDelete(shift.id);
-            setIsSubmitting(false);
+            try {
+                await onDelete(shift.id);
+            } finally {
+                setIsSubmitting(false);
+            }
         }
     };
 

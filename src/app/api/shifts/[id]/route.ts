@@ -94,6 +94,45 @@ export async function PUT(request: Request, { params }: RouteParams) {
         };
 
         if (userId !== undefined) {
+            // Check for overlapping shifts if a user is being assigned or already assigned
+            const targetUserId = userId;
+            const targetStartsAt = startsAt ? new Date(startsAt) : undefined;
+            const targetEndsAt = endsAt ? new Date(endsAt) : undefined;
+
+            // Get current shift values if not provided in body
+            const currentShift = await prisma.shift.findUnique({
+                where: { id },
+                include: { assignments: true }
+            });
+
+            if (currentShift) {
+                const finalUserId = userId !== undefined ? userId : currentShift.assignments[0]?.userId;
+                const finalStartsAt = targetStartsAt || currentShift.startsAt;
+                const finalEndsAt = targetEndsAt || currentShift.endsAt;
+
+                if (finalUserId) {
+                    const overlappingShift = await prisma.shift.findFirst({
+                        where: {
+                            id: { not: id },
+                            assignments: {
+                                some: { userId: finalUserId }
+                            },
+                            AND: [
+                                { startsAt: { lt: finalEndsAt } },
+                                { endsAt: { gt: finalStartsAt } }
+                            ]
+                        }
+                    });
+
+                    if (overlappingShift) {
+                        return NextResponse.json(
+                            { error: 'Denne personen har allerede en vakt i dette tidsrommet' },
+                            { status: 400 }
+                        );
+                    }
+                }
+            }
+
             data.assignments = {
                 deleteMany: {}, // Remove existing assignments
             };

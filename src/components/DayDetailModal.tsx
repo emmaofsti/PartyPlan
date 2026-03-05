@@ -69,7 +69,7 @@ export default function DayDetailModal({ date, onClose, currentUserId, shiftsPro
         <div className="modal-backdrop" onClick={onClose}>
             <div className="modal" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
-                    <h2>{formattedDate}.</h2>
+                    <h2>{formattedDate}</h2>
                     <button onClick={onClose} className="btn-close">×</button>
                 </div>
 

@@ -97,6 +97,28 @@ export async function POST(request: Request) {
             );
         }
 
+        // Check for overlapping shifts if a user is assigned
+        if (userId) {
+            const overlappingShift = await prisma.shift.findFirst({
+                where: {
+                    assignments: {
+                        some: { userId: userId }
+                    },
+                    AND: [
+                        { startsAt: { lt: endDate } },
+                        { endsAt: { gt: startDate } }
+                    ]
+                }
+            });
+
+            if (overlappingShift) {
+                return NextResponse.json(
+                    { error: 'Denne personen har allerede en vakt i dette tidsrommet' },
+                    { status: 400 }
+                );
+            }
+        }
+
         const shift = await prisma.shift.create({
             data: {
                 title,

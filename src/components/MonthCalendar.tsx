@@ -178,6 +178,68 @@ export default function MonthCalendar({ userId, isAdmin, onAddShift }: MonthCale
         setCurrentDate(newDate);
     };
 
+    const printWeek = (week: { weekNumber: number; days: { date: Date; isCurrentMonth: boolean }[] }) => {
+        const firstDay = week.days[0].date;
+        const lastDay = week.days[6].date;
+        const fmtDate = (d: Date) => d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' });
+        const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+
+        const dayRows = week.days.map(item => {
+            const dayShifts = getShiftsForDate(item.date);
+            const dateStr = item.date.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' });
+            const shiftsHtml = dayShifts.length === 0
+                ? '<tr><td colspan="3" style="color:#aaa;font-style:italic;padding:4px 8px;">Ingen vakter</td></tr>'
+                : dayShifts.map(s => {
+                    const names = s.assignments.map(a => a.user.name).join(', ') || '—';
+                    return `<tr>
+                        <td style="padding:4px 8px;border-bottom:1px solid #eee;">${s.title}</td>
+                        <td style="padding:4px 8px;border-bottom:1px solid #eee;">${fmtTime(s.startsAt)} – ${fmtTime(s.endsAt)}</td>
+                        <td style="padding:4px 8px;border-bottom:1px solid #eee;">${names}</td>
+                    </tr>`;
+                }).join('');
+
+            return `
+                <div style="margin-bottom:14px;">
+                    <div style="background:#f5f5f5;padding:6px 10px;border-radius:6px;font-weight:600;text-transform:capitalize;font-size:15px;">${dateStr}</div>
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead><tr>
+                            <th style="text-align:left;padding:4px 8px;color:#666;font-weight:500;">Vakt</th>
+                            <th style="text-align:left;padding:4px 8px;color:#666;font-weight:500;">Tid</th>
+                            <th style="text-align:left;padding:4px 8px;color:#666;font-weight:500;">Ansatte</th>
+                        </tr></thead>
+                        <tbody>${shiftsHtml}</tbody>
+                    </table>
+                </div>`;
+        }).join('');
+
+        const html = `<!DOCTYPE html>
+<html lang="nb">
+<head>
+<meta charset="UTF-8">
+<title>Uke ${week.weekNumber} – Vaktplan</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  body { font-family: Arial, sans-serif; color: #1a1a1a; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p { margin: 0 0 16px; color: #555; font-size: 13px; }
+  @media print { button { display: none; } }
+</style>
+</head>
+<body>
+  <h1>Uke ${week.weekNumber} – Vaktplan</h1>
+  <p>${fmtDate(firstDay)} – ${fmtDate(lastDay)}</p>
+  ${dayRows}
+  <script>window.onload = function() { window.print(); }<\/script>
+</body>
+</html>`;
+
+        const w = window.open('', '_blank');
+        if (w) {
+            w.document.write(html);
+            w.document.close();
+        }
+    };
+
     const weekDays = ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'];
     const weeks = getWeeksInMonthGrid();
 
@@ -210,7 +272,14 @@ export default function MonthCalendar({ userId, isAdmin, onAddShift }: MonthCale
                 <div className="calendar-grid-month">
                     {weeks.map((week, wIndex) => (
                         <div key={wIndex} className="calendar-week-row">
-                            <div className="calendar-week-number">{week.weekNumber}</div>
+                            <div className="calendar-week-number">
+                                {week.weekNumber}
+                                <button
+                                    className="print-week-btn"
+                                    title={`Skriv ut uke ${week.weekNumber}`}
+                                    onClick={(e) => { e.stopPropagation(); printWeek(week); }}
+                                >🖨️</button>
+                            </div>
                             {week.days.map((item, dIndex) => {
                                 const isToday = new Date().toDateString() === item.date.toDateString();
                                 const myShift = hasMyShift(item.date);
@@ -284,7 +353,7 @@ export default function MonthCalendar({ userId, isAdmin, onAddShift }: MonthCale
 
             .calendar-grid-header {
                 display: grid;
-            grid-template-columns: 30px repeat(7, 1fr);
+            grid-template-columns: 48px repeat(7, 1fr);
             gap: 2px;
             margin-bottom: var(--space-xs);
             text-align: center;
@@ -311,17 +380,36 @@ export default function MonthCalendar({ userId, isAdmin, onAddShift }: MonthCale
 
             .calendar-week-row {
                 display: grid;
-            grid-template-columns: 30px repeat(7, 1fr);
+            grid-template-columns: 48px repeat(7, 1fr);
             gap: 2px;
         }
 
             .calendar-week-number {
                 display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: 3px;
             font-size: 0.8rem;
             color: var(--color-text-muted);
             font-weight: 500;
+        }
+
+        .print-week-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 0.85rem;
+            padding: 2px;
+            border-radius: 4px;
+            line-height: 1;
+            opacity: 0.5;
+            transition: opacity 0.15s, background 0.15s;
+        }
+
+        .print-week-btn:hover {
+            opacity: 1;
+            background: var(--color-bg-secondary);
         }
 
             .calendar-day-cell {

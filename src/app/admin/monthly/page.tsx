@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 
 interface User {
@@ -27,8 +27,8 @@ interface CellData {
 
 // Time slot definitions (matching the Excel screenshot)
 const TIME_SLOTS = [
-    { label: '10:00-17:00', start: '10:00', end: '17:00', isCustom: false },
-    { label: '10:00-17:00', start: '10:00', end: '17:00', isCustom: false },
+    { label: '09:45-17:00', start: '09:45', end: '17:00', isCustom: false },
+    { label: '09:45-17:00', start: '09:45', end: '17:00', isCustom: false },
     { label: '12:00-19:00', start: '12:00', end: '19:00', isCustom: false },
     { label: '17:00-21:15', start: '17:00', end: '21:15', isCustom: false },
     { label: '17:00-21:15', start: '17:00', end: '21:15', isCustom: false },
@@ -37,7 +37,7 @@ const TIME_SLOTS = [
     { label: 'Annet', start: '', end: '', isCustom: true },
 ];
 
-const DAY_NAMES = ['mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
+const DAY_NAMES = ['mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag', 'søndag'];
 
 // Employee color palette
 const EMPLOYEE_COLORS: Record<string, string> = {};
@@ -64,6 +64,16 @@ function getWeekNumber(date: Date): number {
     return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
+function getDateOfWeek(week: number, year: number): Date {
+    // Returns the Monday of the given ISO week number
+    const jan4 = new Date(year, 0, 4);
+    const dayOfWeek = jan4.getDay() || 7;
+    const monday = new Date(jan4);
+    monday.setDate(jan4.getDate() - dayOfWeek + 1);
+    monday.setDate(monday.getDate() + (week - 1) * 7);
+    return monday;
+}
+
 // Get all weeks in a month (each week = array of dates Mon-Sat)
 function getWeeksInMonth(year: number, month: number): Date[][] {
     const weeks: Date[][] = [];
@@ -81,12 +91,8 @@ function getWeeksInMonth(year: number, month: number): Date[][] {
 
     while (current <= lastDay || current.getDay() !== 1) {
         const week: Date[] = [];
-        for (let i = 0; i < 6; i++) { // Mon-Sat (6 days)
+        for (let i = 0; i < 7; i++) { // Mon-Sun (7 days)
             week.push(new Date(current));
-            current.setDate(current.getDate() + 1);
-        }
-        // Skip Sunday
-        if (current.getDay() === 0) {
             current.setDate(current.getDate() + 1);
         }
         weeks.push(week);
@@ -117,20 +123,33 @@ export default function MonthlyPage() {
     const [originalData, setOriginalData] = useState<Record<string, CellData>>({});
     // Which cell is currently being edited
     const [editingCell, setEditingCell] = useState<string | null>(null);
+    // Which week header is being edited (by weekIdx)
+    const [editingWeekIdx, setEditingWeekIdx] = useState<number | null>(null);
+    const [weekInputVal, setWeekInputVal] = useState('');
+    const [targetWeekNum, setTargetWeekNum] = useState<number | null>(null);
+    const hasScrolledToCurrentWeek = useRef(false);
+    const [showFromWeek, setShowFromWeek] = useState<number | null>(null); // null = use currentWeekNum
+    // Position of the open dropdown (for fixed positioning)
+    const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+    // Refs for editing context
+    const editingContextRef = useRef<{ dayIdx: number; date: Date; slotIdx: number; slot: typeof TIME_SLOTS[0] } | null>(null);
 
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-    const weeks = getWeeksInMonth(year, month);
+    const weeks = useMemo(() => getWeeksInMonth(year, month), [year, month]);
+    const currentWeekNum = useMemo(() => getWeekNumber(new Date()), []);
 
     const monthName = currentDate.toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' });
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
+    const fetchData = useCallback(async (silent = false) => {
+        if (!silent) setLoading(true);
         try {
             // Calculate date range for the visible weeks
             const allDates = weeks.flat();
-            const startDate = allDates[0];
-            const endDate = allDates[allDates.length - 1];
+            if (allDates.length === 0) return null;
+
+            const startDate = new Date(allDates[0]);
+            const endDate = new Date(allDates[allDates.length - 1]);
             endDate.setHours(23, 59, 59);
 
             const [shiftsRes, usersRes] = await Promise.all([
@@ -159,29 +178,42 @@ export default function MonthlyPage() {
 
                     // Try to match to a time slot
                     let matchedSlot = -1;
-                    for (let i = 0; i < TIME_SLOTS.length; i++) {
-                        const [slotStartH, slotStartM] = TIME_SLOTS[i].start.split(':').map(Number);
-                        const [slotEndH, slotEndM] = TIME_SLOTS[i].end.split(':').map(Number);
+                    const shiftStartMins = shiftStartHour * 60 + shiftStartMin;
+                    const shiftEndMins = shiftEndHour * 60 + shiftEndMin;
 
-                        if (shiftStartHour === slotStartH && shiftStartMin === slotStartM &&
-                            shiftEndHour === slotEndH && shiftEndMin === slotEndM) {
-                            // Exact match – check if this slot is already taken for this date
+                    // 1) Exact match (start + end)
+                    for (let i = 0; i < TIME_SLOTS.length && matchedSlot === -1; i++) {
+                        if (TIME_SLOTS[i].isCustom) continue;
+                        const [sH, sM] = TIME_SLOTS[i].start.split(':').map(Number);
+                        const [eH, eM] = TIME_SLOTS[i].end.split(':').map(Number);
+                        if (shiftStartHour === sH && shiftStartMin === sM &&
+                            shiftEndHour === eH && shiftEndMin === eM) {
                             const cellKey = `${dateKey}|${i}`;
-                            if (!newGridData[cellKey]) {
+                            if (!newGridData[cellKey]) matchedSlot = i;
+                        }
+                    }
+
+                    // 2) Closest start time match (within 30 min), empty slot
+                    if (matchedSlot === -1) {
+                        let bestDiff = 31;
+                        for (let i = 0; i < TIME_SLOTS.length; i++) {
+                            if (TIME_SLOTS[i].isCustom) continue;
+                            const [sH, sM] = TIME_SLOTS[i].start.split(':').map(Number);
+                            const slotMins = sH * 60 + sM;
+                            const diff = Math.abs(shiftStartMins - slotMins);
+                            const cellKey = `${dateKey}|${i}`;
+                            if (diff < bestDiff && !newGridData[cellKey]) {
+                                bestDiff = diff;
                                 matchedSlot = i;
-                                break;
                             }
                         }
                     }
 
-                    // If no exact match, put in first empty slot
+                    // 3) Any empty slot
                     if (matchedSlot === -1) {
                         for (let i = 0; i < TIME_SLOTS.length; i++) {
                             const cellKey = `${dateKey}|${i}`;
-                            if (!newGridData[cellKey]) {
-                                matchedSlot = i;
-                                break;
-                            }
+                            if (!newGridData[cellKey]) { matchedSlot = i; break; }
                         }
                     }
 
@@ -189,28 +221,61 @@ export default function MonthlyPage() {
 
                     const assigned = shift.assignments[0];
                     const cellKey = `${dateKey}|${matchedSlot}`;
-                    newGridData[cellKey] = {
+
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    const actualStart = `${pad(shiftStartHour)}:${pad(shiftStartMin)}`;
+                    const actualEnd = `${pad(shiftEndHour)}:${pad(shiftEndMin)}`;
+                    const slotStart = TIME_SLOTS[matchedSlot].start;
+                    const slotEnd = TIME_SLOTS[matchedSlot].end;
+
+                    const cellData: CellData = {
                         userId: assigned?.user.id || null,
                         userName: assigned?.user.name || shift.title,
                         shiftId: shift.id,
                     };
+                    // Always store actual times so the cell displays what's really in the DB
+                    if (actualStart !== slotStart || actualEnd !== slotEnd) {
+                        cellData.customStart = actualStart;
+                        cellData.customEnd = actualEnd;
+                    }
+                    newGridData[cellKey] = cellData;
                 });
 
                 setGridData(newGridData);
                 setOriginalData(JSON.parse(JSON.stringify(newGridData)));
+                return newGridData;
             }
         } catch (error) {
             console.error('Failed to fetch data:', error);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
-    }, [year, month]); // eslint-disable-line react-hooks/exhaustive-deps
+        return null;
+    }, [year, month, weeks]); // Added weeks to dependencies just in case // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         fetchData();
+        // Auto-refresh every 60 seconds (silent refresh)
+        const interval = setInterval(() => fetchData(true), 60_000);
+        return () => clearInterval(interval);
     }, [fetchData]);
 
-    const handleCellClick = (cellKey: string) => {
-        setEditingCell(editingCell === cellKey ? null : cellKey);
+    const handleCellClick = (cellKey: string, e: React.MouseEvent, dayIdx: number, date: Date, slotIdx: number, slot: typeof TIME_SLOTS[0]) => {
+        if (editingCell === cellKey) {
+            setEditingCell(null);
+            setDropdownPos(null);
+            editingContextRef.current = null;
+            return;
+        }
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const dropdownWidth = 220;
+        let left = rect.left;
+        if (left + dropdownWidth > window.innerWidth - 8) {
+            left = window.innerWidth - dropdownWidth - 8;
+        }
+        setDropdownPos({ top: rect.bottom + 4, left });
+        editingContextRef.current = { dayIdx, date, slotIdx, slot };
+        setEditingCell(cellKey);
     };
 
     const handleSelectUser = (cellKey: string, userId: string, userName: string) => {
@@ -244,6 +309,16 @@ export default function MonthlyPage() {
         });
         setEditingCell(null);
     };
+
+    useEffect(() => {
+        const close = () => { setEditingCell(null); setDropdownPos(null); };
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        return () => {
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+        };
+    }, []);
 
     const hasChanges = () => {
         const allKeys = new Set([...Object.keys(gridData), ...Object.keys(originalData)]);
@@ -352,6 +427,104 @@ export default function MonthlyPage() {
         setCurrentDate(new Date(year, month + 1, 1));
     };
 
+    // Show only current week and onwards by default; expand when user jumps to past week
+    const minWeek = showFromWeek ?? currentWeekNum;
+    const displayedWeeks = useMemo(() =>
+        weeks.filter((w: Date[]) => getWeekNumber(w[0]) >= minWeek),
+        [weeks, minWeek]);
+
+    const jumpToWeek = (weekNum: number) => {
+        const alreadyVisible = weeks.some(w => getWeekNumber(w[0]) === weekNum);
+        if (!alreadyVisible) {
+            const target = getDateOfWeek(weekNum, year);
+            setCurrentDate(new Date(target.getFullYear(), target.getMonth(), 1));
+        }
+        // If jumping to a past week, adjust minWeek so it shows up
+        if (weekNum < currentWeekNum) {
+            setShowFromWeek(weekNum);
+        } else {
+            setShowFromWeek(null); // reset to current week
+        }
+        setEditingWeekIdx(null);
+        setTargetWeekNum(weekNum);
+    };
+
+    useEffect(() => {
+        if (targetWeekNum !== null) {
+            const tryScroll = () => {
+                const el = document.getElementById(`week-block-${targetWeekNum}`);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    setTargetWeekNum(null);
+                }
+            };
+            tryScroll();
+            const t = setTimeout(tryScroll, 150);
+            return () => clearTimeout(t);
+        }
+    }, [targetWeekNum, displayedWeeks]);
+
+    const printWeek = async (week: Date[], weekNum: number) => {
+        // Always fetch the latest data before printing (silent)
+        const latestGridData = await fetchData(true) || gridData;
+
+        const fmtDate = (d: Date) => d.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long' });
+        const fmtShort = (d: Date) => d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long' });
+
+        const headerCols = week.map(d => `<th style="padding:6px 10px;background:#f5f5f5;text-align:center;border:1px solid #ddd;">${fmtDate(d)}</th>`).join('');
+
+        const bodyRows = TIME_SLOTS.map((slot, slotIdx) => {
+            const dateCols = week.map(date => {
+                const cellKey = `${dateToKey(date)}|${slotIdx}`;
+                const cell = latestGridData[cellKey];
+                const name = cell?.userName ?? '';
+                const time = slot.isCustom && cell?.customStart ? `${cell.customStart}–${cell.customEnd}` : (slot.isCustom ? '' : slot.label);
+                return `<td style="padding:6px 10px;border:1px solid #ddd;text-align:center;">
+                    ${name ? `<strong>${name}</strong>${time ? `<br/><small style="color:#666">${time}</small>` : ''}` : '<span style="color:#ccc">–</span>'}
+                </td>`;
+            }).join('');
+            return `<tr>
+                ${dateCols}
+            </tr>`;
+        }).join('');
+
+        const firstDay = week[0];
+        const lastDay = week[week.length - 1];
+
+        const html = `<!DOCTYPE html>
+<html lang="nb">
+<head>
+<meta charset="UTF-8">
+<title>Uke ${weekNum} – Vaktplan</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm; }
+  body { font-family: Arial, sans-serif; color: #1a1a1a; font-size: 12px; }
+  h1 { font-size: 16px; margin-bottom: 2px; }
+  p { margin: 0 0 12px; color: #555; font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; }
+  @media print { button { display: none; } }
+</style>
+</head>
+<body>
+  <h1>Uke ${weekNum} – Vaktplan</h1>
+  <p>${fmtShort(firstDay)} – ${fmtShort(lastDay)}</p>
+  <table>
+    <thead><tr>
+      ${headerCols}
+    </tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table>
+  <script>window.onload = function() { window.print(); }<\/script>
+</body>
+</html>`;
+
+        const w = window.open('', '_blank');
+        if (w) {
+            w.document.write(html);
+            w.document.close();
+        }
+    };
+
     return (
         <main className="main-content monthly-page">
             <div className="monthly-header">
@@ -388,17 +561,50 @@ export default function MonthlyPage() {
                 </div>
             ) : (
                 <div className="grid-wrapper">
-                    {weeks.map((week, weekIdx) => {
+                    {displayedWeeks.map((week: Date[], weekIdx: number) => {
                         const weekNum = getWeekNumber(week[0]);
                         return (
-                            <div key={weekIdx} className="week-block">
-                                <div className="week-header">Uke {weekNum}</div>
+                            <div key={weekIdx} id={`week-block-${weekNum}`} className={`week-block ${targetWeekNum === weekNum ? 'week-highlight' : ''}`}>
+                                <div className="week-header">
+                                    {editingWeekIdx === weekIdx ? (
+                                        <input
+                                            className="week-num-input"
+                                            type="number"
+                                            min={1}
+                                            max={53}
+                                            value={weekInputVal}
+                                            autoFocus
+                                            onChange={(e) => setWeekInputVal(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    const n = parseInt(weekInputVal);
+                                                    if (n >= 1 && n <= 53) jumpToWeek(n);
+                                                } else if (e.key === 'Escape') {
+                                                    setEditingWeekIdx(null);
+                                                }
+                                            }}
+                                            onBlur={() => setEditingWeekIdx(null)}
+                                        />
+                                    ) : (
+                                        <span
+                                            className="week-num-label"
+                                            title="Klikk for å hoppe til en annen uke"
+                                            onClick={() => { setEditingWeekIdx(weekIdx); setWeekInputVal(String(weekNum)); }}
+                                        >
+                                            Uke {weekNum} ✎
+                                        </span>
+                                    )}
+                                    <button
+                                        className="print-week-btn"
+                                        title={`Skriv ut uke ${weekNum}`}
+                                        onClick={() => printWeek(week, weekNum)}
+                                    >🖨️ Skriv ut</button>
+                                </div>
                                 <div className="grid-table-scroll">
                                     <table className="grid-table">
                                         <thead>
                                             <tr>
-                                                <th className="slot-header"></th>
-                                                {week.map((date, dayIdx) => (
+                                                {week.map((date: Date, dayIdx: number) => (
                                                     <th key={dayIdx} className={`day-header ${date.getMonth() !== month ? 'outside-month' : ''}`}>
                                                         <span className="day-name">{DAY_NAMES[dayIdx]}</span>
                                                         <span className="day-date">{formatDateShort(date)}</span>
@@ -407,10 +613,10 @@ export default function MonthlyPage() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {TIME_SLOTS.map((slot, slotIdx) => (
-                                                <tr key={slotIdx} className={slot.label.startsWith('Ekstra') || slot.label === 'Annet' ? 'extra-row' : ''}>
-                                                    <td className="slot-label">{slot.label}</td>
-                                                    {week.map((date, dayIdx) => {
+                                            {TIME_SLOTS.map((slot, slotIdx: number) => (
+                                                <tr key={slotIdx} className={slot.label.startsWith('Ekstra') || slot.label === 'Annet' ? 'extra-row' : ''} title={slot.label}>
+
+                                                    {week.map((date: Date, dayIdx: number) => {
                                                         const cellKey = `${dateToKey(date)}|${slotIdx}`;
                                                         const cell = gridData[cellKey];
                                                         const isEditing = editingCell === cellKey;
@@ -421,69 +627,21 @@ export default function MonthlyPage() {
                                                                 key={dayIdx}
                                                                 className={`grid-cell ${cell ? 'filled' : 'empty'} ${isOutside ? 'outside-month' : ''} ${isEditing ? 'editing' : ''}`}
                                                                 style={cell?.userId ? { backgroundColor: getEmployeeColor(cell.userId) + '33', borderLeft: `3px solid ${getEmployeeColor(cell.userId)}` } : undefined}
-                                                                onClick={() => handleCellClick(cellKey)}
+                                                                onClick={(e) => handleCellClick(cellKey, e, dayIdx, date, slotIdx, slot)}
                                                             >
                                                                 {cell ? (
                                                                     <div className="cell-content">
                                                                         <span className="cell-name">{cell.userName}</span>
-                                                                        {slot.isCustom && cell.customStart && (
-                                                                            <span className="cell-time">{cell.customStart}-{cell.customEnd}</span>
+                                                                        {(cell.customStart || (!slot.isCustom && slot.start)) && (
+                                                                            <span className="cell-time">
+                                                                                {cell.customStart || slot.start}–{cell.customEnd || slot.end}
+                                                                            </span>
                                                                         )}
                                                                     </div>
                                                                 ) : (
                                                                     <span className="cell-placeholder">+</span>
                                                                 )}
 
-                                                                {isEditing && (
-                                                                    <div className="cell-dropdown" onClick={(e) => e.stopPropagation()}>
-                                                                        <div className="dropdown-title">{slot.label} – {DAY_NAMES[dayIdx]} {formatDateShort(date)}</div>
-                                                                        {cell && (
-                                                                            <button
-                                                                                className="dropdown-item remove"
-                                                                                onClick={() => handleRemoveUser(cellKey)}
-                                                                            >
-                                                                                ✕ Fjern {cell.userName}
-                                                                            </button>
-                                                                        )}
-                                                                        {slot.isCustom && (
-                                                                            <>
-                                                                                <div className="dropdown-divider" />
-                                                                                <div className="dropdown-time-inputs">
-                                                                                    <label className="time-label">Tid:</label>
-                                                                                    <input
-                                                                                        type="time"
-                                                                                        className="time-input"
-                                                                                        value={gridData[cellKey]?.customStart || ''}
-                                                                                        onChange={(e) => handleCustomTimeChange(cellKey, 'customStart', e.target.value)}
-                                                                                        placeholder="Start"
-                                                                                    />
-                                                                                    <span className="time-sep">–</span>
-                                                                                    <input
-                                                                                        type="time"
-                                                                                        className="time-input"
-                                                                                        value={gridData[cellKey]?.customEnd || ''}
-                                                                                        onChange={(e) => handleCustomTimeChange(cellKey, 'customEnd', e.target.value)}
-                                                                                        placeholder="Slutt"
-                                                                                    />
-                                                                                </div>
-                                                                            </>
-                                                                        )}
-                                                                        <div className="dropdown-divider" />
-                                                                        {users.map((user) => (
-                                                                            <button
-                                                                                key={user.id}
-                                                                                className={`dropdown-item ${cell?.userId === user.id ? 'active' : ''}`}
-                                                                                onClick={() => handleSelectUser(cellKey, user.id, user.name)}
-                                                                            >
-                                                                                <span
-                                                                                    className="color-dot"
-                                                                                    style={{ backgroundColor: getEmployeeColor(user.id) }}
-                                                                                />
-                                                                                {user.name}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
                                                             </td>
                                                         );
                                                     })}
@@ -497,6 +655,61 @@ export default function MonthlyPage() {
                     })}
                 </div>
             )}
+
+            {/* Global fixed dropdown – floats above everything */}
+            {editingCell && dropdownPos && (() => {
+                const closeDropdown = () => { setEditingCell(null); setDropdownPos(null); editingContextRef.current = null; };
+                return (<div className="dropdown-overlay" onClick={closeDropdown} />);
+            })()}
+            {editingCell && dropdownPos && editingContextRef.current && (() => {
+                const { dayIdx, date, slot } = editingContextRef.current;
+                const cell = gridData[editingCell];
+                return (
+                    <div
+                        className="cell-dropdown-fixed"
+                        style={{ top: dropdownPos.top, left: dropdownPos.left }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="dropdown-title">
+                            <span className="dropdown-day">{DAY_NAMES[dayIdx]}</span>
+                            <span className="dropdown-date">{formatDateShort(date)}</span>
+                        </div>
+                        {cell && (
+                            <button className="dropdown-item remove" onClick={() => handleRemoveUser(editingCell)}>
+                                ✕ Fjern {cell.userName}
+                            </button>
+                        )}
+                        <div className="dropdown-divider" />
+                        <div className="dropdown-time-inputs">
+                            <label className="time-label">Tid:</label>
+                            <input
+                                type="time"
+                                className="time-input"
+                                value={gridData[editingCell]?.customStart ?? (slot.isCustom ? '' : slot.start)}
+                                onChange={(e) => handleCustomTimeChange(editingCell, 'customStart', e.target.value)}
+                            />
+                            <span className="time-sep">–</span>
+                            <input
+                                type="time"
+                                className="time-input"
+                                value={gridData[editingCell]?.customEnd ?? (slot.isCustom ? '' : slot.end)}
+                                onChange={(e) => handleCustomTimeChange(editingCell, 'customEnd', e.target.value)}
+                            />
+                        </div>
+                        <div className="dropdown-divider" />
+                        {users.map((user) => (
+                            <button
+                                key={user.id}
+                                className={`dropdown-item ${cell?.userId === user.id ? 'active' : ''}`}
+                                onClick={() => handleSelectUser(editingCell, user.id, user.name)}
+                            >
+                                <span className="color-dot" style={{ backgroundColor: getEmployeeColor(user.id) }} />
+                                {user.name}
+                            </button>
+                        ))}
+                    </div>
+                );
+            })()}
 
             <style jsx>{`
                 .monthly-page {
@@ -577,6 +790,11 @@ export default function MonthlyPage() {
                     border: 1px solid var(--color-border);
                 }
 
+                .week-highlight {
+                    border: 2px solid var(--color-primary);
+                    box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+                }
+
                 .week-header {
                     padding: var(--space-sm) var(--space-md);
                     font-weight: 700;
@@ -584,6 +802,54 @@ export default function MonthlyPage() {
                     background: var(--color-bg-input);
                     border-bottom: 1px solid var(--color-border);
                     color: var(--color-text-primary);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                }
+
+                .week-num-label {
+                    cursor: pointer;
+                    border-radius: var(--radius-sm);
+                    padding: 2px 6px;
+                    transition: background 0.15s;
+                    user-select: none;
+                }
+
+                .week-num-label:hover {
+                    background: var(--color-primary-muted, rgba(99,102,241,0.12));
+                    color: var(--color-primary);
+                }
+
+                .week-num-input {
+                    width: 72px;
+                    font-size: 0.9rem;
+                    font-weight: 700;
+                    padding: 2px 8px;
+                    border: 2px solid var(--color-primary);
+                    border-radius: var(--radius-sm);
+                    background: var(--color-bg-card);
+                    color: var(--color-text-primary);
+                    outline: none;
+                }
+
+                .print-week-btn {
+                    background: none;
+                    border: 1px solid var(--color-border);
+                    border-radius: var(--radius-sm);
+                    cursor: pointer;
+                    font-size: 0.75rem;
+                    padding: 3px 8px;
+                    color: var(--color-text-secondary);
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    transition: background 0.15s, color 0.15s;
+                }
+
+                .print-week-btn:hover {
+                    background: var(--color-brand-primary);
+                    color: white;
+                    border-color: transparent;
                 }
 
                 .grid-table-scroll {
@@ -675,9 +941,9 @@ export default function MonthlyPage() {
                 }
 
                 .cell-time {
-                    font-size: 0.6rem;
-                    color: var(--color-text-muted);
-                    font-weight: 400;
+                    font-size: 0.7rem;
+                    color: var(--color-text-secondary);
+                    font-weight: 600;
                 }
 
                 .cell-placeholder {
@@ -694,29 +960,42 @@ export default function MonthlyPage() {
                     z-index: 100;
                 }
 
-                .cell-dropdown {
-                    position: absolute;
-                    top: 100%;
-                    left: 50%;
-                    transform: translateX(-50%);
+                .dropdown-overlay {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 9998;
+                }
+
+                .cell-dropdown-fixed {
+                    position: fixed;
                     background: var(--color-bg-card);
                     border: 1px solid var(--color-border);
-                    border-radius: var(--radius-md);
-                    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-                    min-width: 180px;
-                    z-index: 200;
-                    padding: var(--space-xs);
-                    max-height: 300px;
+                    border-radius: var(--radius-lg);
+                    box-shadow: 0 16px 48px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.15);
+                    min-width: 220px;
+                    z-index: 9999;
+                    padding: var(--space-sm);
+                    max-height: 380px;
                     overflow-y: auto;
                 }
 
                 .dropdown-title {
-                    padding: var(--space-xs) var(--space-sm);
-                    font-size: 0.7rem;
+                    padding: var(--space-xs) var(--space-sm) var(--space-xs);
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1px;
+                }
+
+                .dropdown-day {
+                    font-size: 0.85rem;
+                    font-weight: 700;
+                    color: var(--color-text-primary);
+                    text-transform: capitalize;
+                }
+
+                .dropdown-date {
+                    font-size: 0.75rem;
                     color: var(--color-text-muted);
-                    font-weight: 600;
-                    text-transform: uppercase;
-                    letter-spacing: 0.05em;
                 }
 
                 .dropdown-divider {
