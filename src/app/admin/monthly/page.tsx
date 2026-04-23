@@ -118,6 +118,7 @@ export default function MonthlyPage() {
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<string | null>(null);
     const [showShiftModal, setShowShiftModal] = useState(false);
+    const [timeInputValue, setTimeInputValue] = useState('');
 
     // Grid data: key = "date|slotIndex", value = CellData
     const [gridData, setGridData] = useState<Record<string, CellData>>({});
@@ -276,6 +277,12 @@ export default function MonthlyPage() {
         if (left + dropdownWidth > window.innerWidth - 8) {
             left = window.innerWidth - dropdownWidth - 8;
         }
+
+        const currentData = gridData[cellKey];
+        const currentStart = currentData?.customStart ?? (slot.isCustom ? '' : slot.start);
+        const currentEnd = currentData?.customEnd ?? (slot.isCustom ? '' : slot.end);
+        setTimeInputValue(currentStart && currentEnd ? `${currentStart} - ${currentEnd}` : '');
+
         setDropdownPos({ top: rect.bottom + 4, left });
         editingContextRef.current = { dayIdx, date, slotIdx, slot };
         setEditingCell(cellKey);
@@ -830,20 +837,34 @@ export default function MonthlyPage() {
                             </button>
                         )}
                         <div className="dropdown-divider" />
-                        <div className="dropdown-time-inputs">
-                            <label className="time-label">Tid:</label>
+                        <div className="dropdown-time-inputs" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                            <label className="time-label" style={{ marginBottom: '4px' }}>Tid (f.eks 10-17):</label>
                             <input
-                                type="time"
+                                autoFocus
+                                type="text"
                                 className="time-input"
-                                value={gridData[editingCell]?.customStart ?? (slot.isCustom ? '' : slot.start)}
-                                onChange={(e) => handleCustomTimeChange(editingCell, 'customStart', e.target.value)}
-                            />
-                            <span className="time-sep">–</span>
-                            <input
-                                type="time"
-                                className="time-input"
-                                value={gridData[editingCell]?.customEnd ?? (slot.isCustom ? '' : slot.end)}
-                                onChange={(e) => handleCustomTimeChange(editingCell, 'customEnd', e.target.value)}
+                                style={{ width: '100%', boxSizing: 'border-box' }}
+                                placeholder="10.00 - 17.00"
+                                value={timeInputValue}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setTimeInputValue(val);
+                                    
+                                    const regex = /^(\d{1,2})[.:\s]?(\d{1,2})?\s*[-–]\s*(\d{1,2})[.:\s]?(\d{1,2})?$/;
+                                    const match = val.match(regex);
+                                    if (match) {
+                                        let [_, h1, m1, h2, m2] = match;
+                                        h1 = h1.padStart(2, '0');
+                                        m1 = (m1 || '00').substring(0, 2);
+                                        h2 = h2.padStart(2, '0');
+                                        m2 = (m2 || '00').substring(0, 2);
+                                        
+                                        if (parseInt(h1) < 24 && parseInt(h2) < 24 && parseInt(m1) < 60 && parseInt(m2) < 60) {
+                                            handleCustomTimeChange(editingCell, 'customStart', `${h1}:${m1}`);
+                                            handleCustomTimeChange(editingCell, 'customEnd', `${h2}:${m2}`);
+                                        }
+                                    }
+                                }}
                             />
                         </div>
                         <div className="dropdown-divider" />
