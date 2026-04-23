@@ -110,7 +110,7 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                         <label>Velg vakttype</label>
                         <div className="time-presets">
                             {[
-                                { label: '10:00 – 17:00', start: '10:00', end: '17:00' },
+                                { label: '09:45 – 17:00', start: '09:45', end: '17:00' },
                                 { label: '12:00 – 19:00', start: '12:00', end: '19:00' },
                                 { label: '17:00 – 21:15', start: '17:00', end: '21:15' },
                             ].map((preset) => (

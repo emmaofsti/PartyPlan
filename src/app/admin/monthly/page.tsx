@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
+import AdminShiftModal from '@/components/AdminShiftModal';
 
 interface User {
     id: string;
@@ -116,6 +117,7 @@ export default function MonthlyPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<string | null>(null);
+    const [showShiftModal, setShowShiftModal] = useState(false);
 
     // Grid data: key = "date|slotIndex", value = CellData
     const [gridData, setGridData] = useState<Record<string, CellData>>({});
@@ -343,7 +345,7 @@ export default function MonthlyPage() {
             // Find shifts to delete (were in original but removed or changed)
             const toDelete: string[] = [];
             // Find shifts to create (new or changed)
-            const toCreate: { date: string; startTime: string; endTime: string; userId: string; userName: string }[] = [];
+            const toCreate: { startsAt: string; endsAt: string; userId: string; userName: string }[] = [];
 
             for (const key of allKeys) {
                 const curr = gridData[key];
@@ -361,9 +363,13 @@ export default function MonthlyPage() {
                         const startTime = slot.isCustom ? (curr.customStart || '10:00') : slot.start;
                         const endTime = slot.isCustom ? (curr.customEnd || '17:00') : slot.end;
                         toCreate.push({
-                            date,
-                            startTime,
-                            endTime,
+                            startsAt: new Date(`${date}T${startTime}:00`).toISOString(),
+                            endsAt: (() => {
+                                const e = new Date(`${date}T${endTime}:00`);
+                                const s = new Date(`${date}T${startTime}:00`);
+                                if (e <= s) e.setDate(e.getDate() + 1);
+                                return e.toISOString();
+                            })(),
                             userId: curr.userId,
                             userName: curr.userName,
                         });
@@ -378,9 +384,13 @@ export default function MonthlyPage() {
                         const startTime = slot.isCustom ? (curr.customStart || '10:00') : slot.start;
                         const endTime = slot.isCustom ? (curr.customEnd || '17:00') : slot.end;
                         toCreate.push({
-                            date,
-                            startTime,
-                            endTime,
+                            startsAt: new Date(`${date}T${startTime}:00`).toISOString(),
+                            endsAt: (() => {
+                                const e = new Date(`${date}T${endTime}:00`);
+                                const s = new Date(`${date}T${startTime}:00`);
+                                if (e <= s) e.setDate(e.getDate() + 1);
+                                return e.toISOString();
+                            })(),
                             userId: curr.userId,
                             userName: curr.userName,
                         });
@@ -419,6 +429,17 @@ export default function MonthlyPage() {
         }
         setSaving(false);
     };
+
+    // Auto-save effect
+    useEffect(() => {
+        if (!saving && hasChanges()) {
+            const timer = setTimeout(() => {
+                handleSave();
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [gridData, saving]);
 
     const prevMonth = () => {
         setCurrentDate(new Date(year, month - 1, 1));
@@ -654,16 +675,14 @@ export default function MonthlyPage() {
                         <span className="month-label">{monthName}</span>
                         <button onClick={nextMonth} className="btn btn-ghost btn-sm">Neste →</button>
                     </div>
-                    {hasChanges() && (
-                        <button
-                            onClick={handleSave}
-                            className="btn btn-primary"
-                            disabled={saving}
-                        >
-                            {saving ? 'Lagrer...' : '💾 Lagre endringer'}
-                        </button>
-                    )}
-                    {saveMessage && <span className="save-msg">{saveMessage}</span>}
+                    {saving && <span className="save-msg">Lagrer...</span>}
+                    <button
+                        onClick={() => setShowShiftModal(true)}
+                        className="btn btn-primary"
+                    >
+                        + Legg til vakter
+                    </button>
+                    {saveMessage && !saving && <span className="save-msg">{saveMessage}</span>}
                 </div>
             </div>
 
@@ -838,9 +857,41 @@ export default function MonthlyPage() {
                                 {user.name}
                             </button>
                         ))}
+                        <button
+                            className="action-btn text-danger"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveUser(editingCell); }}
+                        >
+                            🗑️ Slett fra vakt
+                        </button>
                     </div>
                 );
             })()}
+
+            {showShiftModal && (
+                <AdminShiftModal
+                    users={users}
+                    onClose={() => setShowShiftModal(false)}
+                    onSave={async (shiftData) => {
+                        try {
+                            const res = await fetch('/api/shifts', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(shiftData),
+                            });
+                            if (res.ok) {
+                                await fetchData();
+                                setShowShiftModal(false);
+                            } else {
+                                console.error('Failed to save shift');
+                            }
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    }}
+                    onDelete={async () => {}}
+                    prefillDate={currentDate}
+                />
+            )}
 
             <style jsx>{`
                 .monthly-page {

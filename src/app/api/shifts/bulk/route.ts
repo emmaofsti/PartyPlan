@@ -4,9 +4,8 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
 interface BulkShiftInput {
-    date: string;       // YYYY-MM-DD
-    startTime: string;  // HH:mm
-    endTime: string;    // HH:mm
+    startsAt: string; // ISO string
+    endsAt: string; // ISO string
     userId: string;
     userName: string;
 }
@@ -34,13 +33,8 @@ export async function POST(request: Request) {
         // Use a transaction to create all shifts atomically
         const createdShifts = await prisma.$transaction(
             shifts.map((s) => {
-                const startsAt = new Date(`${s.date}T${s.startTime}:00`);
-                const endsAt = new Date(`${s.date}T${s.endTime}:00`);
-
-                // Handle overnight shifts
-                if (endsAt <= startsAt) {
-                    endsAt.setDate(endsAt.getDate() + 1);
-                }
+                const startsAt = new Date(s.startsAt);
+                const endsAt = new Date(s.endsAt);
 
                 return prisma.shift.create({
                     data: {
