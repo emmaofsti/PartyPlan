@@ -687,7 +687,7 @@ export default function MonthlyPage() {
                         onClick={() => setShowShiftModal(true)}
                         className="btn btn-primary"
                     >
-                        + Legg til vakter
+                        Registrer alle vakter
                     </button>
                     {saveMessage && !saving && <span className="save-msg">{saveMessage}</span>}
                 </div>
