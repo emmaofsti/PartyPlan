@@ -111,7 +111,7 @@ export default function AdminShiftModal({ shift, users, onClose, onSave, onDelet
                         <div className="time-presets">
                             {[
                                 { label: '09:45 – 17:00', start: '09:45', end: '17:00' },
-                                { label: '12:00 – 19:00', start: '12:00', end: '19:00' },
+                                { label: '11:30 – 19:00', start: '11:30', end: '19:00' },
                                 { label: '17:00 – 21:15', start: '17:00', end: '21:15' },
                             ].map((preset) => (
                                 <button

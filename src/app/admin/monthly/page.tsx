@@ -30,7 +30,7 @@ interface CellData {
 const TIME_SLOTS = [
     { label: '09:45-17:00', start: '09:45', end: '17:00', isCustom: false },
     { label: '09:45-17:00', start: '09:45', end: '17:00', isCustom: false },
-    { label: '12:00-19:00', start: '12:00', end: '19:00', isCustom: false },
+    { label: '11:30-19:00', start: '11:30', end: '19:00', isCustom: false },
     { label: '17:00-21:15', start: '17:00', end: '21:15', isCustom: false },
     { label: '17:00-21:15', start: '17:00', end: '21:15', isCustom: false },
     { label: 'Ekstra 1', start: '', end: '', isCustom: true },
