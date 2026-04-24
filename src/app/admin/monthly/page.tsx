@@ -279,8 +279,52 @@ export default function MonthlyPage() {
         }
 
         const currentData = gridData[cellKey];
-        const currentStart = currentData?.customStart ?? (slot.isCustom ? '' : slot.start);
-        const currentEnd = currentData?.customEnd ?? (slot.isCustom ? '' : slot.end);
+        let currentStart = currentData?.customStart;
+        let currentEnd = currentData?.customEnd;
+
+        // SMART SUGGESTION FOR NEW SHIFTS
+        if (!currentData?.userId) {
+            const dateStr = dateToKey(date);
+            const registeredTimes = new Set<string>();
+            Object.keys(gridData).forEach(k => {
+                if (k.startsWith(dateStr) && gridData[k]?.userId) {
+                    const idx = parseInt(k.split('|')[1]);
+                    const cStart = gridData[k].customStart || (TIME_SLOTS[idx].isCustom ? '' : TIME_SLOTS[idx].start);
+                    const cEnd = gridData[k].customEnd || (TIME_SLOTS[idx].isCustom ? '' : TIME_SLOTS[idx].end);
+                    if (cStart && cEnd) registeredTimes.add(`${cStart}-${cEnd}`);
+                }
+            });
+
+            // Sequence to suggest:
+            const sequence = ['09:45-17:00', '11:30-19:00', '17:00-21:15'];
+            let foundSuggestion = false;
+            for (const seq of sequence) {
+                if (!registeredTimes.has(seq)) {
+                    const [s, eTime] = seq.split('-');
+                    currentStart = s;
+                    currentEnd = eTime;
+                    foundSuggestion = true;
+                    // Pre-fill gridData softly so it saves with this time
+                    setGridData(prev => ({
+                        ...prev,
+                        [cellKey]: {
+                            ...prev[cellKey] || { userId: null, userName: '', shiftId: null },
+                            customStart: s,
+                            customEnd: eTime
+                        }
+                    }));
+                    break;
+                }
+            }
+            if (!foundSuggestion) {
+                currentStart = slot.isCustom ? '' : slot.start;
+                currentEnd = slot.isCustom ? '' : slot.end;
+            }
+        } else {
+             if (!currentStart && !slot.isCustom) currentStart = slot.start;
+             if (!currentEnd && !slot.isCustom) currentEnd = slot.end;
+        }
+
         setTimeInputValue(currentStart && currentEnd ? `${currentStart} - ${currentEnd}` : '');
 
         setDropdownPos({ top: rect.bottom + 4, left });
@@ -298,7 +342,7 @@ export default function MonthlyPage() {
                 shiftId: prev[cellKey]?.shiftId || null,
             },
         }));
-        setEditingCell(null);
+        // Fjernet setEditingCell(null) slik at menyen holdes åpen
     };
 
     const handleCustomTimeChange = (cellKey: string, field: 'customStart' | 'customEnd', value: string) => {
@@ -335,9 +379,15 @@ export default function MonthlyPage() {
         for (const key of allKeys) {
             const curr = gridData[key];
             const orig = originalData[key];
+            
             if (!curr && orig) return true;
-            if (curr && !orig) return true;
-            if (curr && orig && (curr.userId !== orig.userId || curr.customStart !== orig.customStart || curr.customEnd !== orig.customEnd)) return true;
+            if (curr && !orig) {
+                if (curr.userId) return true;
+            }
+            if (curr && orig) {
+                if (curr.userId !== orig.userId) return true;
+                if (curr.userId && (curr.customStart !== orig.customStart || curr.customEnd !== orig.customEnd)) return true;
+            }
         }
         return false;
     };
@@ -381,26 +431,30 @@ export default function MonthlyPage() {
                             userName: curr.userName,
                         });
                     }
-                } else if (curr && orig && curr.userId !== orig.userId) {
-                    // Changed: delete old, create new
-                    if (orig.shiftId) toDelete.push(orig.shiftId);
-                    if (curr.userId) {
-                        const [date] = key.split('|');
-                        const slotIdx = parseInt(key.split('|')[1]);
-                        const slot = TIME_SLOTS[slotIdx];
-                        const startTime = slot.isCustom ? (curr.customStart || '10:00') : slot.start;
-                        const endTime = slot.isCustom ? (curr.customEnd || '17:00') : slot.end;
-                        toCreate.push({
-                            startsAt: new Date(`${date}T${startTime}:00`).toISOString(),
-                            endsAt: (() => {
-                                const e = new Date(`${date}T${endTime}:00`);
-                                const s = new Date(`${date}T${startTime}:00`);
-                                if (e <= s) e.setDate(e.getDate() + 1);
-                                return e.toISOString();
-                            })(),
-                            userId: curr.userId,
-                            userName: curr.userName,
-                        });
+                } else if (curr && orig) {
+                    const timeChanged = curr.customStart !== orig.customStart || curr.customEnd !== orig.customEnd;
+                    const userChanged = curr.userId !== orig.userId;
+
+                    if (userChanged || (timeChanged && curr.userId)) {
+                        if (orig.shiftId) toDelete.push(orig.shiftId);
+                        if (curr.userId) {
+                            const [date] = key.split('|');
+                            const slotIdx = parseInt(key.split('|')[1]);
+                            const slot = TIME_SLOTS[slotIdx];
+                            const startTime = slot.isCustom ? (curr.customStart || '10:00') : slot.start;
+                            const endTime = slot.isCustom ? (curr.customEnd || '17:00') : slot.end;
+                            toCreate.push({
+                                startsAt: new Date(`${date}T${startTime}:00`).toISOString(),
+                                endsAt: (() => {
+                                    const e = new Date(`${date}T${endTime}:00`);
+                                    const s = new Date(`${date}T${startTime}:00`);
+                                    if (e <= s) e.setDate(e.getDate() + 1);
+                                    return e.toISOString();
+                                })(),
+                                userId: curr.userId,
+                                userName: curr.userName,
+                            });
+                        }
                     }
                 }
             }
@@ -426,8 +480,8 @@ export default function MonthlyPage() {
             const totalChanges = toDelete.length + toCreate.length;
             setSaveMessage(`✅ Lagret ${totalChanges} endring${totalChanges !== 1 ? 'er' : ''}!`);
 
-            // Reload to sync with DB
-            await fetchData();
+            // Reload to sync with DB silently so user doesn't lose focus
+            await fetchData(true);
 
             setTimeout(() => setSaveMessage(null), 3000);
         } catch (error) {
@@ -437,16 +491,7 @@ export default function MonthlyPage() {
         setSaving(false);
     };
 
-    // Auto-save effect
-    useEffect(() => {
-        if (!saving && hasChanges()) {
-            const timer = setTimeout(() => {
-                handleSave();
-            }, 1000);
-            return () => clearTimeout(timer);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [gridData, saving]);
+
 
     const prevMonth = () => {
         setCurrentDate(new Date(year, month - 1, 1));
@@ -683,6 +728,16 @@ export default function MonthlyPage() {
                         <button onClick={nextMonth} className="btn btn-ghost btn-sm">Neste →</button>
                     </div>
                     {saving && <span className="save-msg">Lagrer...</span>}
+                    {hasChanges() && (
+                        <button
+                            onClick={handleSave}
+                            className="btn btn-secondary"
+                            style={{ backgroundColor: '#22c55e', color: 'white', borderColor: '#16a34a' }}
+                            disabled={saving}
+                        >
+                            Lagre endringer
+                        </button>
+                    )}
                     <button
                         onClick={() => setShowShiftModal(true)}
                         className="btn btn-primary"
@@ -847,21 +902,28 @@ export default function MonthlyPage() {
                                 placeholder="10.00 - 17.00"
                                 value={timeInputValue}
                                 onChange={(e) => {
+                                    setTimeInputValue(e.target.value);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.currentTarget.blur();
+                                    }
+                                }}
+                                onBlur={(e) => {
                                     const val = e.target.value;
-                                    setTimeInputValue(val);
-                                    
                                     const regex = /^(\d{1,2})[.:\s]?(\d{1,2})?\s*[-–]\s*(\d{1,2})[.:\s]?(\d{1,2})?$/;
                                     const match = val.match(regex);
                                     if (match) {
                                         let [_, h1, m1, h2, m2] = match;
                                         h1 = h1.padStart(2, '0');
-                                        m1 = (m1 || '00').substring(0, 2);
+                                        m1 = (m1 || '00').substring(0, 2).padStart(2, '0');
                                         h2 = h2.padStart(2, '0');
-                                        m2 = (m2 || '00').substring(0, 2);
+                                        m2 = (m2 || '00').substring(0, 2).padStart(2, '0');
                                         
                                         if (parseInt(h1) < 24 && parseInt(h2) < 24 && parseInt(m1) < 60 && parseInt(m2) < 60) {
                                             handleCustomTimeChange(editingCell, 'customStart', `${h1}:${m1}`);
                                             handleCustomTimeChange(editingCell, 'customEnd', `${h2}:${m2}`);
+                                            setTimeInputValue(`${h1}:${m1} - ${h2}:${m2}`);
                                         }
                                     }
                                 }}
@@ -900,7 +962,7 @@ export default function MonthlyPage() {
                                 body: JSON.stringify(shiftData),
                             });
                             if (res.ok) {
-                                await fetchData();
+                                await fetchData(true);
                                 setShowShiftModal(false);
                             } else {
                                 console.error('Failed to save shift');
