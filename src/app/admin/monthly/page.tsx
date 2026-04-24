@@ -131,6 +131,12 @@ export default function MonthlyPage() {
     const [weekInputVal, setWeekInputVal] = useState('');
     const [targetWeekNum, setTargetWeekNum] = useState<number | null>(null);
     const hasScrolledToCurrentWeek = useRef(false);
+    const initialLoadDone = useRef(false);
+    const gridDataRef = useRef(gridData);
+    const originalDataRef = useRef(originalData);
+    // Keep refs in sync
+    gridDataRef.current = gridData;
+    originalDataRef.current = originalData;
     const [showFromWeek, setShowFromWeek] = useState<number | null>(null); // null = use currentWeekNum
     const [printWeeksByWeekNum, setPrintWeeksByWeekNum] = useState<Record<number, number>>({});
     // Position of the open dropdown (for fixed positioning)
@@ -146,6 +152,36 @@ export default function MonthlyPage() {
     const monthName = currentDate.toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' });
 
     const fetchData = useCallback(async (silent = false) => {
+        // PROTECTION: if silent mode and user has unsaved changes, only update users list
+        if (silent && initialLoadDone.current) {
+            const gd = gridDataRef.current;
+            const od = originalDataRef.current;
+            const allKeys = new Set([...Object.keys(gd), ...Object.keys(od)]);
+            let hasPendingChanges = false;
+            for (const key of allKeys) {
+                const curr = gd[key];
+                const orig = od[key];
+                if (!curr && orig) { hasPendingChanges = true; break; }
+                if (curr && !orig && curr.userId) { hasPendingChanges = true; break; }
+                if (curr && orig) {
+                    if (curr.userId !== orig.userId) { hasPendingChanges = true; break; }
+                    if (curr.userId && (curr.customStart !== orig.customStart || curr.customEnd !== orig.customEnd)) { hasPendingChanges = true; break; }
+                }
+            }
+            if (hasPendingChanges) {
+                console.log('[Monthly] Skipping silent refresh: unsaved changes detected');
+                // Still refresh user list
+                try {
+                    const usersRes = await fetch('/api/users');
+                    if (usersRes.ok) {
+                        const allUsers = await usersRes.json();
+                        setUsers(allUsers.filter((u: User & { name: string }) => u.name.toLowerCase() !== 'emma'));
+                    }
+                } catch (e) { /* ignore */ }
+                return gridDataRef.current;
+            }
+        }
+
         if (!silent) setLoading(true);
         try {
             // Calculate date range for the visible weeks
@@ -247,6 +283,7 @@ export default function MonthlyPage() {
 
                 setGridData(newGridData);
                 setOriginalData(JSON.parse(JSON.stringify(newGridData)));
+                initialLoadDone.current = true;
                 return newGridData;
             }
         } catch (error) {
@@ -255,7 +292,7 @@ export default function MonthlyPage() {
             setLoading(false);
         }
         return null;
-    }, [year, month, weeks]); // Added weeks to dependencies just in case // eslint-disable-line react-hooks/exhaustive-deps
+    }, [year, month, weeks]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         fetchData();
