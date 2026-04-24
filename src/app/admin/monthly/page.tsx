@@ -280,8 +280,8 @@ export default function MonthlyPage() {
         let currentStart = currentData?.customStart;
         let currentEnd = currentData?.customEnd;
 
-        // SMART SUGGESTION FOR NEW SHIFTS
-        if (!currentData?.userId) {
+        // SMART SUGGESTION: only set the INPUT display value, don't touch gridData
+        if (!currentData?.userId && !currentStart && !currentEnd) {
             const dateStr = dateToKey(date);
             const registeredTimes = new Set<string>();
             Object.keys(gridData).forEach(k => {
@@ -293,34 +293,38 @@ export default function MonthlyPage() {
                 }
             });
 
-            // Sequence to suggest:
-            const sequence = ['09:45-17:00', '11:30-19:00', '17:00-21:15'];
-            let foundSuggestion = false;
+            const sequence = ['09:45-17:00', '09:45-17:00', '11:30-19:00', '17:00-21:15', '17:00-21:15'];
+            // Count how many of each are registered
+            const countMap: Record<string, number> = {};
+            registeredTimes.forEach(t => { countMap[t] = (countMap[t] || 0) + 1; });
+            // Count how many of each exist in sequence
+            const seqCountMap: Record<string, number> = {};
+            sequence.forEach(s => { seqCountMap[s] = (seqCountMap[s] || 0) + 1; });
+
+            let suggestion: string | null = null;
             for (const seq of sequence) {
-                if (!registeredTimes.has(seq)) {
-                    const [s, eTime] = seq.split('-');
-                    currentStart = s;
-                    currentEnd = eTime;
-                    foundSuggestion = true;
-                    // Pre-fill gridData softly so it saves with this time
-                    setGridData(prev => ({
-                        ...prev,
-                        [cellKey]: {
-                            ...prev[cellKey] || { userId: null, userName: '', shiftId: null },
-                            customStart: s,
-                            customEnd: eTime
-                        }
-                    }));
+                const needed = seqCountMap[seq] || 0;
+                const used = countMap[seq] || 0;
+                if (used < needed) {
+                    suggestion = seq;
+                    // Mark as "used" so next iteration skips this slot
+                    countMap[seq] = used + 1;
                     break;
                 }
             }
-            if (!foundSuggestion) {
+            if (suggestion) {
+                const [s, eTime] = suggestion.split('-');
+                currentStart = s;
+                currentEnd = eTime;
+            } else {
                 currentStart = slot.isCustom ? '' : slot.start;
                 currentEnd = slot.isCustom ? '' : slot.end;
             }
+        } else if (!currentData?.userId) {
+            // Cell already has custom times typed (but no user yet) - keep them
         } else {
-             if (!currentStart && !slot.isCustom) currentStart = slot.start;
-             if (!currentEnd && !slot.isCustom) currentEnd = slot.end;
+            if (!currentStart && !slot.isCustom) currentStart = slot.start;
+            if (!currentEnd && !slot.isCustom) currentEnd = slot.end;
         }
 
         setTimeInputValue(currentStart && currentEnd ? `${currentStart} - ${currentEnd}` : '');
@@ -331,6 +335,23 @@ export default function MonthlyPage() {
     };
 
     const handleSelectUser = (cellKey: string, userId: string, userName: string) => {
+        // Parse the current time input so smart suggestions get saved with the shift
+        const regex = /^(\d{1,2})[.:\s]?(\d{1,2})?\s*[-–]\s*(\d{1,2})[.:\s]?(\d{1,2})?$/;
+        const match = timeInputValue.match(regex);
+        let parsedStart: string | undefined;
+        let parsedEnd: string | undefined;
+        if (match) {
+            let [_, h1, m1, h2, m2] = match;
+            h1 = h1.padStart(2, '0');
+            m1 = (m1 || '00').substring(0, 2).padStart(2, '0');
+            h2 = h2.padStart(2, '0');
+            m2 = (m2 || '00').substring(0, 2).padStart(2, '0');
+            if (parseInt(h1) < 24 && parseInt(h2) < 24 && parseInt(m1) < 60 && parseInt(m2) < 60) {
+                parsedStart = `${h1}:${m1}`;
+                parsedEnd = `${h2}:${m2}`;
+            }
+        }
+
         setGridData((prev) => ({
             ...prev,
             [cellKey]: {
@@ -338,9 +359,10 @@ export default function MonthlyPage() {
                 userId,
                 userName,
                 shiftId: prev[cellKey]?.shiftId || null,
+                ...(parsedStart && { customStart: parsedStart }),
+                ...(parsedEnd && { customEnd: parsedEnd }),
             },
         }));
-        // Fjernet setEditingCell(null) slik at menyen holdes åpen
     };
 
     const handleCustomTimeChange = (cellKey: string, field: 'customStart' | 'customEnd', value: string) => {
@@ -478,8 +500,8 @@ export default function MonthlyPage() {
             const totalChanges = toDelete.length + toCreate.length;
             setSaveMessage(`✅ Lagret ${totalChanges} endring${totalChanges !== 1 ? 'er' : ''}!`);
 
-            // Reload to sync with DB silently so user doesn't lose focus
-            await fetchData(true);
+            // Sync originalData to match gridData so hasChanges() is clean
+            setOriginalData(JSON.parse(JSON.stringify(gridData)));
 
             setTimeout(() => setSaveMessage(null), 3000);
         } catch (error) {
