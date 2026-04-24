@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
-import AdminShiftModal from '@/components/AdminShiftModal';
 
 interface User {
     id: string;
@@ -117,7 +116,7 @@ export default function MonthlyPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<string | null>(null);
-    const [showShiftModal, setShowShiftModal] = useState(false);
+
     const [timeInputValue, setTimeInputValue] = useState('');
 
     // Grid data: key = "date|slotIndex", value = CellData
@@ -795,12 +794,6 @@ export default function MonthlyPage() {
                             Lagre endringer
                         </button>
                     )}
-                    <button
-                        onClick={() => setShowShiftModal(true)}
-                        className="btn btn-primary"
-                    >
-                        Registrer alle vakter
-                    </button>
                     {saveMessage && !saving && <span className="save-msg">{saveMessage}</span>}
                 </div>
             </div>
@@ -1007,31 +1000,7 @@ export default function MonthlyPage() {
                 );
             })()}
 
-            {showShiftModal && (
-                <AdminShiftModal
-                    users={users}
-                    onClose={() => setShowShiftModal(false)}
-                    onSave={async (shiftData) => {
-                        try {
-                            const res = await fetch('/api/shifts', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(shiftData),
-                            });
-                            if (res.ok) {
-                                await fetchData(true);
-                                setShowShiftModal(false);
-                            } else {
-                                console.error('Failed to save shift');
-                            }
-                        } catch (error) {
-                            console.error(error);
-                        }
-                    }}
-                    onDelete={async () => {}}
-                    prefillDate={currentDate}
-                />
-            )}
+
 
             <style jsx>{`
                 .monthly-page {
