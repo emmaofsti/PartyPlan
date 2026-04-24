@@ -259,9 +259,7 @@ export default function MonthlyPage() {
 
     useEffect(() => {
         fetchData();
-        // Auto-refresh every 60 seconds (silent refresh)
-        const interval = setInterval(() => fetchData(true), 60_000);
-        return () => clearInterval(interval);
+        // Removed 60-second auto-refresh because it overwrites unsaved manual edits
     }, [fetchData]);
 
     const handleCellClick = (cellKey: string, e: React.MouseEvent, dayIdx: number, date: Date, slotIdx: number, slot: typeof TIME_SLOTS[0]) => {
