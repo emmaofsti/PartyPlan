@@ -415,8 +415,8 @@ export default function MonthlyPage() {
                         const [date] = key.split('|');
                         const slotIdx = parseInt(key.split('|')[1]);
                         const slot = TIME_SLOTS[slotIdx];
-                        const startTime = slot.isCustom ? (curr.customStart || '10:00') : slot.start;
-                        const endTime = slot.isCustom ? (curr.customEnd || '17:00') : slot.end;
+                        const startTime = curr.customStart || slot.start || '10:00';
+                        const endTime = curr.customEnd || slot.end || '17:00';
                         toCreate.push({
                             startsAt: new Date(`${date}T${startTime}:00`).toISOString(),
                             endsAt: (() => {
@@ -439,8 +439,8 @@ export default function MonthlyPage() {
                             const [date] = key.split('|');
                             const slotIdx = parseInt(key.split('|')[1]);
                             const slot = TIME_SLOTS[slotIdx];
-                            const startTime = slot.isCustom ? (curr.customStart || '10:00') : slot.start;
-                            const endTime = slot.isCustom ? (curr.customEnd || '17:00') : slot.end;
+                            const startTime = curr.customStart || slot.start || '10:00';
+                            const endTime = curr.customEnd || slot.end || '17:00';
                             toCreate.push({
                                 startsAt: new Date(`${date}T${startTime}:00`).toISOString(),
                                 endsAt: (() => {
