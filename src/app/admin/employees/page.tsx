@@ -35,7 +35,7 @@ export default function EmployeesPage() {
 
     const fetchUsers = async () => {
         try {
-            const res = await fetch('/api/users');
+            const res = await fetch('/api/users?includeInactive=1');
             if (res.ok) {
                 const data = await res.json();
                 setUsers(data);
@@ -120,6 +120,55 @@ export default function EmployeesPage() {
         }
     };
 
+    const renderTable = (list: User[]) => (
+        <div className="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Navn</th>
+                        <th>E-post</th>
+                        <th>Telefon</th>
+                        <th>Rolle</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {list.map((user) => (
+                        <tr
+                            key={user.id}
+                            onClick={() => editUser(user)}
+                            className="clickable-row"
+                            style={{ cursor: 'pointer' }}
+                        >
+                            <td>{user.name}</td>
+                            <td>{user.email}</td>
+                            <td>{user.phone || '–'}</td>
+                            <td>
+                                <span className={`badge badge-${user.role.toLowerCase()}`}>
+                                    {user.role === 'ADMIN' ? 'Admin' : 'Ansatt'}
+                                </span>
+                            </td>
+                            <td>
+                                <span className={`badge ${user.active ? 'badge-confirmed' : 'badge-cancelled'}`}>
+                                    {user.active ? 'Aktiv' : 'Inaktiv'}
+                                </span>
+                            </td>
+                            <td className="text-right">
+                                <button
+                                    onClick={(e) => toggleActive(user, e)}
+                                    className="btn btn-ghost btn-sm"
+                                >
+                                    {user.active ? 'Deaktiver' : 'Aktiver'}
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+
     return (
         <main className="main-content">
             <div className="page-header">
@@ -141,52 +190,18 @@ export default function EmployeesPage() {
                     <span className="loading-spinner" />
                 </div>
             ) : (
-                <div className="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Navn</th>
-                                <th>E-post</th>
-                                <th>Telefon</th>
-                                <th>Rolle</th>
-                                <th>Status</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {users.map((user) => (
-                                <tr
-                                    key={user.id}
-                                    onClick={() => editUser(user)}
-                                    className="clickable-row"
-                                    style={{ cursor: 'pointer' }}
-                                >
-                                    <td>{user.name}</td>
-                                    <td>{user.email}</td>
-                                    <td>{user.phone || '–'}</td>
-                                    <td>
-                                        <span className={`badge badge-${user.role.toLowerCase()}`}>
-                                            {user.role === 'ADMIN' ? 'Admin' : 'Ansatt'}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span className={`badge ${user.active ? 'badge-confirmed' : 'badge-cancelled'}`}>
-                                            {user.active ? 'Aktiv' : 'Inaktiv'}
-                                        </span>
-                                    </td>
-                                    <td className="text-right">
-                                        <button
-                                            onClick={(e) => toggleActive(user, e)}
-                                            className="btn btn-ghost btn-sm"
-                                        >
-                                            {user.active ? 'Deaktiver' : 'Aktiver'}
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                <>
+                    {renderTable(users.filter((u) => u.active))}
+                    {users.some((u) => !u.active) && (
+                        <>
+                            <h2 className="mt-lg">Inaktive ansatte</h2>
+                            <p className="text-muted">
+                                Vises ikke i vaktplanen eller ved vaktbytte. Trykk «Aktiver» for å hente dem tilbake.
+                            </p>
+                            {renderTable(users.filter((u) => !u.active))}
+                        </>
+                    )}
+                </>
             )}
 
             {showModal && (
