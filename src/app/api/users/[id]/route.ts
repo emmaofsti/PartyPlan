@@ -60,13 +60,22 @@ export async function PUT(request: Request, { params }: RouteParams) {
         }
 
         const body = await request.json();
-        const { name, email, phone, role, active } = body;
+        const { phone, role, active, password } = body;
+        const name = body.name?.trim().replace(/\s+/g, ' ');
+        const email = body.email?.trim().toLowerCase();
+
+        if (password !== undefined && password.length < 6) {
+            return NextResponse.json({ error: 'Passordet må være minst 6 tegn' }, { status: 400 });
+        }
+
+        const bcrypt = await import('bcryptjs');
 
         const user = await prisma.user.update({
             where: { id },
             data: {
                 name: name || undefined,
                 email: email || undefined,
+                password: password ? await bcrypt.hash(password, 10) : undefined,
                 phone: phone !== undefined ? phone : undefined,
                 role: role || undefined,
                 active: active !== undefined ? active : undefined,

@@ -85,7 +85,7 @@ function LoginForm() {
                         onChange={(e) => setName(e.target.value)}
                         onBlur={(e) => checkPasswordRequirement(e.target.value)}
                         className="form-input"
-                        placeholder="Skriv inn ditt fornavn"
+                        placeholder="Fornavn eller fullt navn"
                         required
                         autoFocus
                         autoComplete="username"

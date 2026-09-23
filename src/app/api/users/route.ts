@@ -3,8 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
-// GET /api/users - Get all users (admin only)
-export async function GET() {
+// GET /api/users - Get active users (?includeInactive=1 for admins to also get deactivated users)
+export async function GET(request: Request) {
     try {
         const session = await getServerSession(authOptions);
 
@@ -13,8 +13,12 @@ export async function GET() {
         }
 
         // All authenticated users can see the list of employees (for swap/give functionality)
+        const includeInactive =
+            session.user.role === 'ADMIN' &&
+            new URL(request.url).searchParams.get('includeInactive') === '1';
 
         const users = await prisma.user.findMany({
+            where: includeInactive ? undefined : { active: true },
             select: {
                 id: true,
                 name: true,
@@ -48,7 +52,9 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { name, email, phone, password, role } = body;
+        const { phone, password, role } = body;
+        const name = body.name?.trim().replace(/\s+/g, ' ');
+        const email = body.email?.trim().toLowerCase();
 
         // Validation
         if (!name || !email || !password) {

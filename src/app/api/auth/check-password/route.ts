@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { findLoginCandidates } from '@/lib/auth';
 
 // POST /api/auth/check-password - Check if a user has password set
 export async function POST(request: Request) {
@@ -11,24 +11,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Navn er påkrevd' }, { status: 400 });
         }
 
-        const searchName = name.trim().toLowerCase();
+        const candidates = await findLoginCandidates(name);
 
-        // Find user by name (case insensitive)
-        const users = await prisma.user.findMany({
-            where: { active: true },
-        });
-
-        const user = users.find(
-            (u) => u.name.toLowerCase() === searchName
-        );
-
-        if (!user) {
+        if (candidates.length === 0) {
             return NextResponse.json({ error: 'Bruker ikke funnet' }, { status: 404 });
         }
 
         return NextResponse.json({
-            hasPassword: !!user.password,
-            userId: user.id,
+            hasPassword: candidates.some((u) => !!u.password),
         });
     } catch (error) {
         console.error('Error checking password:', error);

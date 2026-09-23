@@ -3,6 +3,22 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import prisma from './prisma';
 import bcrypt from 'bcryptjs';
 
+export const normalizeName = (name: string) =>
+    name.trim().replace(/\s+/g, ' ').toLowerCase();
+
+// Find active users matching a login name. Exact full-name matches win;
+// otherwise match on first name, so "Ola" finds "Ola Nordmann".
+// May return several users when first names are shared.
+export async function findLoginCandidates(name: string) {
+    const searchName = normalizeName(name);
+    const users = await prisma.user.findMany({ where: { active: true } });
+
+    const exact = users.filter((u) => normalizeName(u.name) === searchName);
+    if (exact.length > 0) return exact;
+
+    return users.filter((u) => normalizeName(u.name).split(' ')[0] === searchName);
+}
+
 export const authOptions: NextAuthOptions = {
     providers: [
         CredentialsProvider({
@@ -16,35 +32,36 @@ export const authOptions: NextAuthOptions = {
                     throw new Error('Vennligst skriv inn fornavn');
                 }
 
-                const searchName = credentials.name.trim().toLowerCase();
+                const candidates = await findLoginCandidates(credentials.name);
 
-                // Find user by name (case insensitive)
-                const users = await prisma.user.findMany({
-                    where: { active: true },
-                });
-
-                const user = users.find(
-                    (u) => u.name.toLowerCase() === searchName
-                );
-
-                if (!user) {
+                if (candidates.length === 0) {
                     throw new Error('Finner ikke bruker med det navnet');
                 }
 
-                // If user has a password, verify it
-                if (user.password) {
+                let user = candidates.length === 1 ? candidates[0] : null;
+
+                if (candidates.some((u) => u.password)) {
                     if (!credentials.password) {
                         throw new Error('Passord er påkrevd');
                     }
 
-                    const isValidPassword = await bcrypt.compare(
-                        credentials.password,
-                        user.password
-                    );
+                    // With shared first names, the password decides who is logging in
+                    user = null;
+                    for (const candidate of candidates) {
+                        if (
+                            candidate.password &&
+                            (await bcrypt.compare(credentials.password, candidate.password))
+                        ) {
+                            user = candidate;
+                            break;
+                        }
+                    }
 
-                    if (!isValidPassword) {
+                    if (!user) {
                         throw new Error('Feil passord');
                     }
+                } else if (!user) {
+                    throw new Error('Flere har dette fornavnet – skriv fullt navn');
                 }
 
                 return {
